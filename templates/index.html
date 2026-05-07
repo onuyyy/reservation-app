@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>YY 예약 관리</title>
+<link rel="stylesheet" href="/static/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <nav class="sidebar">
+    <div class="logo">YY<span>예약관리</span></div>
+    <ul class="nav-menu">
+      <li class="nav-item active" data-page="reservations">📋 예약 내역</li>
+      <li class="nav-item" data-page="stats">📊 통계</li>
+      <li class="nav-divider"></li>
+      <li class="nav-item" data-page="venues">🏟 행사장 관리</li>
+      <li class="nav-item" data-page="clients">👥 고객 관리</li>
+    </ul>
+  </nav>
+  <main class="main">
+
+    <!-- ===== 예약 내역 ===== -->
+    <div id="page-reservations" class="page active">
+      <div class="page-header">
+        <h1>예약 내역</h1>
+        <button class="btn btn-primary" onclick="openModal()">+ 예약 추가</button>
+      </div>
+      <div class="filter-bar">
+        <div class="filter-group">
+          <select id="filter-year" onchange="loadReservations()"><option value="">전체 연도</option></select>
+          <select id="filter-month" onchange="loadReservations()">
+            <option value="">전체 월</option>
+            <option value="1">1월</option><option value="2">2월</option><option value="3">3월</option>
+            <option value="4">4월</option><option value="5">5월</option><option value="6">6월</option>
+            <option value="7">7월</option><option value="8">8월</option><option value="9">9월</option>
+            <option value="10">10월</option><option value="11">11월</option><option value="12">12월</option>
+          </select>
+          <select id="filter-vendor" onchange="loadReservations()"><option value="">전체 업체</option></select>
+          <input type="text" id="filter-keyword" placeholder="단체명/행사명/담당자 검색" onkeyup="debounceSearch()">
+        </div>
+        <button class="btn-export" onclick="exportExcel()">⬇ 엑셀 다운로드</button>
+      </div>
+      <div id="date-tabs"></div>
+      <div class="summary-cards" id="summary-cards"></div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>행사일</th><th>단체명</th><th>행사명</th><th>업체</th>
+              <th>인원</th><th>DC금액</th><th>입금액</th><th>실판매가</th><th>담당자</th><th>관리</th>
+            </tr>
+          </thead>
+          <tbody id="res-tbody"></tbody>
+          <tfoot>
+            <tr>
+              <td colspan="4" class="total-label">합 계</td>
+              <td id="total-headcount" class="num"></td>
+              <td id="total-dc" class="num"></td>
+              <td id="total-deposit" class="num"></td>
+              <td id="total-actual" class="num"></td>
+              <td colspan="2"></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== 통계 ===== -->
+    <div id="page-stats" class="page">
+      <div class="page-header">
+        <h1>통계</h1>
+        <div class="filter-group">
+          <select id="stats-year" onchange="loadStats()"><option value="">연도 선택</option></select>
+          <select id="stats-month" onchange="loadStats()">
+            <option value="">전체 월</option>
+            <option value="1">1월</option><option value="2">2월</option><option value="3">3월</option>
+            <option value="4">4월</option><option value="5">5월</option><option value="6">6월</option>
+            <option value="7">7월</option><option value="8">8월</option><option value="9">9월</option>
+            <option value="10">10월</option><option value="11">11월</option><option value="12">12월</option>
+          </select>
+        </div>
+      </div>
+      <div class="stats-grid">
+        <div class="card"><h2 class="card-title">월별 매출</h2><div class="chart-wrap"><canvas id="monthly-chart"></canvas></div><table class="stats-table" id="monthly-table"></table></div>
+        <div class="card"><h2 class="card-title">업체별 매출</h2><table class="stats-table" id="vendor-table"></table></div>
+      </div>
+    </div>
+
+    <!-- ===== 행사장 관리 ===== -->
+    <div id="page-venues" class="page">
+      <div class="page-header">
+        <h1>행사장 관리</h1>
+        <button class="btn btn-primary" onclick="openVenueModal()">+ 행사장 추가</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>행사장명</th><th>메모</th><th style="width:120px">관리</th></tr>
+          </thead>
+          <tbody id="venues-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ===== 고객 관리 ===== -->
+    <div id="page-clients" class="page">
+      <div class="page-header">
+        <h1>고객 관리</h1>
+        <button class="btn btn-primary" onclick="openClientModal()">+ 고객 추가</button>
+      </div>
+      <div class="mgmt-filter">
+        <select id="client-type-filter" onchange="filterClients()">
+          <option value="">전체 구분</option>
+          <option value="체육관">체육관</option>
+          <option value="어린이집">어린이집</option>
+          <option value="기타">기타</option>
+        </select>
+        <input type="text" id="client-keyword" placeholder="단체명 / 담당자 검색" onkeyup="debounceClientSearch()">
+        <span id="client-count" class="mgmt-count"></span>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>단체명</th><th>구분</th><th>전화번호</th><th>담당자</th><th>은행 / 계좌</th><th style="width:120px">관리</th></tr>
+          </thead>
+          <tbody id="clients-tbody"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ===== 예약 모달 ===== -->
+<div id="modal" class="modal-overlay" onclick="closeModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">예약 추가</h2>
+      <button class="modal-close" onclick="closeModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="edit-id">
+      <div class="form-grid">
+        <div class="form-group"><label>행사일 *</label><input type="date" id="f-event_date"></div>
+        <div class="form-group">
+          <label>단체명 *</label>
+          <input type="text" id="f-group_name" placeholder="예) 경희태권도" list="client-name-list" onchange="onClientSelect(this.value)" autocomplete="off">
+          <datalist id="client-name-list"></datalist>
+        </div>
+        <div class="form-group">
+          <label>행사명 (행사장)</label>
+          <input type="text" id="f-event_name" list="venue-name-list" onchange="onVenueSelect(this.value)" autocomplete="off">
+          <datalist id="venue-name-list"></datalist>
+        </div>
+        <div class="form-group">
+          <label>업체</label>
+          <input type="text" id="f-vendor" list="vendor-list" autocomplete="off">
+          <datalist id="vendor-list"></datalist>
+        </div>
+        <div class="form-group"><label>판매가</label><input type="number" id="f-sale_price" placeholder="0"></div>
+        <div class="form-group"><label>DC후 판매가</label><input type="number" id="f-dc_sale_price" placeholder="0"></div>
+        <div class="form-group"><label>인원</label><input type="number" id="f-headcount" placeholder="0"></div>
+        <div class="form-group"><label>DC금액</label><input type="number" id="f-dc_amount" placeholder="0"></div>
+        <div class="form-group"><label>입금액</label><input type="number" id="f-deposit" placeholder="0"></div>
+        <div class="form-group"><label>실판매가 (수수료)</label><input type="number" id="f-actual_sale" placeholder="0"></div>
+        <div class="form-group"><label>전화번호</label><input type="text" id="f-phone"></div>
+        <div class="form-group"><label>은행</label><input type="text" id="f-bank"></div>
+        <div class="form-group"><label>계좌번호</label><input type="text" id="f-account_number"></div>
+        <div class="form-group"><label>예금주</label><input type="text" id="f-account_holder"></div>
+        <div class="form-group"><label>담당자</label><input type="text" id="f-manager"></div>
+        <div class="form-group full"><label>메모</label><textarea id="f-memo" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveReservation()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 행사장 모달 ===== -->
+<div id="venue-modal" class="modal-overlay" onclick="closeVenueModalOutside(event)">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+      <h2 id="venue-modal-title">행사장 추가</h2>
+      <button class="modal-close" onclick="closeVenueModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="venue-edit-id">
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="form-group"><label>행사장명 *</label><input type="text" id="vf-name" placeholder="예) 롯데월드"></div>
+        <div class="form-group"><label>메모</label><textarea id="vf-memo" rows="3"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeVenueModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveVenue()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 고객 모달 ===== -->
+<div id="client-modal" class="modal-overlay" onclick="closeClientModalOutside(event)">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="client-modal-title">고객 추가</h2>
+      <button class="modal-close" onclick="closeClientModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="hidden" id="client-edit-id">
+      <div class="form-grid">
+        <div class="form-group"><label>단체명 *</label><input type="text" id="cf-name" placeholder="예) 경희태권도"></div>
+        <div class="form-group">
+          <label>구분</label>
+          <select id="cf-type" style="padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px;outline:none;background:#fff">
+            <option value="">선택</option>
+            <option value="체육관">체육관</option>
+            <option value="어린이집">어린이집</option>
+            <option value="기타">기타</option>
+          </select>
+        </div>
+        <div class="form-group"><label>전화번호</label><input type="text" id="cf-phone"></div>
+        <div class="form-group"><label>담당자</label><input type="text" id="cf-manager"></div>
+        <div class="form-group"><label>은행</label><input type="text" id="cf-bank"></div>
+        <div class="form-group"><label>계좌번호</label><input type="text" id="cf-account_number"></div>
+        <div class="form-group"><label>예금주</label><input type="text" id="cf-account_holder"></div>
+        <div class="form-group full"><label>메모</label><textarea id="cf-memo" rows="2"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" onclick="closeClientModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveClient()">저장</button>
+    </div>
+  </div>
+</div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>
