@@ -3,7 +3,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from typing import Optional
-from database import get_db, Client
+from database import get_db, Client, Reservation
 
 router = APIRouter(prefix="/api/clients", tags=["clients"])
 
@@ -38,6 +38,8 @@ def find_duplicate_client(db: Session, name: str, exclude_id: Optional[int] = No
 def create_client(data: ClientIn, db: Session = Depends(get_db)):
     payload = data.model_dump()
     payload["name"] = payload["name"].strip()
+    if not payload["name"]:
+        raise HTTPException(status_code=400, detail="단체명을 입력해 주세요.")
     if find_duplicate_client(db, payload["name"]):
         raise HTTPException(status_code=409, detail=f"이미 등록된 고객입니다: {payload['name']}")
     c = Client(**payload)
@@ -50,6 +52,8 @@ def update_client(cid: int, data: ClientIn, db: Session = Depends(get_db)):
     if not c: raise HTTPException(status_code=404, detail="Not found")
     payload = data.model_dump()
     payload["name"] = payload["name"].strip()
+    if not payload["name"]:
+        raise HTTPException(status_code=400, detail="단체명을 입력해 주세요.")
     if find_duplicate_client(db, payload["name"], exclude_id=cid):
         raise HTTPException(status_code=409, detail=f"이미 등록된 고객입니다: {payload['name']}")
     for k, val in payload.items(): setattr(c, k, val)
@@ -60,5 +64,8 @@ def update_client(cid: int, data: ClientIn, db: Session = Depends(get_db)):
 def delete_client(cid: int, db: Session = Depends(get_db)):
     c = db.query(Client).filter(Client.id == cid).first()
     if not c: raise HTTPException(status_code=404, detail="Not found")
+    in_use = db.query(Reservation.id).filter(Reservation.client_id == cid).first()
+    if in_use:
+        raise HTTPException(status_code=409, detail="예약에 사용 중인 고객은 삭제할 수 없습니다.")
     db.delete(c); db.commit()
     return {"ok": True}

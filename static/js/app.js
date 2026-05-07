@@ -29,6 +29,21 @@ function normalizeName(value) {
   return (value || '').trim().toLowerCase();
 }
 
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[ch]));
+}
+
+function displayText(value, fallback = '-') {
+  const text = value ?? '';
+  return String(text).trim() ? escapeHtml(text) : fallback;
+}
+
 function numberValue(id) {
   return parseFloat(document.getElementById(id).value) || 0;
 }
@@ -95,6 +110,12 @@ const appAlert = (message, title = '알림', type = 'info') =>
 const appConfirm = (message, { title = '확인', type = 'warning', okText = '확인', cancelText = '취소' } = {}) =>
   appDialog({ title, message, type, okText, cancelText, showCancel: true });
 
+async function parseJsonResponse(res) {
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || '요청 처리 중 오류가 발생했습니다.');
+  return data;
+}
+
 function renderPager(containerId, current, total, gotoFn) {
   const el = document.getElementById(containerId);
   if (total <= 1) { el.innerHTML = ''; return; }
@@ -116,7 +137,7 @@ function renderPager(containerId, current, total, gotoFn) {
 }
 
 async function loadYearOptions() {
-  const years = await fetch('/api/reservations/years').then(r => r.json());
+  const years = await fetch('/api/reservations/years').then(parseJsonResponse);
   const cur = new Date().getFullYear();
   ['filter-year', 'stats-year'].forEach(id => {
     const sel = document.getElementById(id);
@@ -138,17 +159,17 @@ let venuesCache = [];
 
 async function loadOptions() {
   [clientsCache, venuesCache] = await Promise.all([
-    fetch('/api/clients/').then(r => r.json()),
-    fetch('/api/venues/').then(r => r.json()),
+    fetch('/api/clients/').then(parseJsonResponse),
+    fetch('/api/venues/').then(parseJsonResponse),
   ]);
   document.getElementById('client-name-list').innerHTML =
-    clientsCache.map(c => `<option value="${c.name}">`).join('');
+    clientsCache.map(c => `<option value="${escapeHtml(c.name)}">`).join('');
   document.getElementById('venue-name-list').innerHTML =
-    venuesCache.map(v => `<option value="${v.name}">`).join('');
+    venuesCache.map(v => `<option value="${escapeHtml(v.name)}">`).join('');
 }
 
 async function loadVendors() {
-  const vendors = await fetch('/api/reservations/vendors').then(r => r.json());
+  const vendors = await fetch('/api/reservations/vendors').then(parseJsonResponse);
   const sel = document.getElementById('filter-vendor');
   sel.innerHTML = '<option value="">전체 업체</option>';
   const dl = document.getElementById('vendor-list');
@@ -156,7 +177,7 @@ async function loadVendors() {
   vendors.forEach(v => {
     const o = document.createElement('option');
     o.value = v; o.textContent = v; sel.appendChild(o);
-    dl.innerHTML += `<option value="${v}">`;
+    dl.innerHTML += `<option value="${escapeHtml(v)}">`;
   });
 }
 
@@ -176,7 +197,7 @@ async function loadReservations() {
   if (m) p.append('month', m);
   if (v) p.append('vendor', v);
   if (k) p.append('keyword', k);
-  allData = await fetch('/api/reservations/?' + p).then(r => r.json());
+  allData = await fetch('/api/reservations/?' + p).then(parseJsonResponse);
   activeDate = null;
   renderAll();
 }
@@ -184,7 +205,23 @@ async function loadReservations() {
 function renderAll() {
   renderDateTabs(allData);
   const data = activeDate ? allData.filter(r => r.event_date === activeDate) : allData;
-  renderTable(data);
+  renderTable(sortReservations(data));
+}
+
+function sortReservations(data) {
+  const sortBy = document.getElementById('sort-reservations')?.value || 'date-desc';
+  const collator = new Intl.Collator('ko-KR', { numeric: true, sensitivity: 'base' });
+  return [...data].sort((a, b) => {
+    if (sortBy === 'group-name') {
+      const byName = collator.compare(a.group_name || '', b.group_name || '');
+      return byName || String(b.event_date || '').localeCompare(String(a.event_date || ''));
+    }
+    if (sortBy === 'event-name') {
+      const byEvent = collator.compare(a.event_name || '', b.event_name || '');
+      return byEvent || String(b.event_date || '').localeCompare(String(a.event_date || ''));
+    }
+    return String(b.event_date || '').localeCompare(String(a.event_date || '')) || ((b.id || 0) - (a.id || 0));
+  });
 }
 
 function renderDateTabs(data) {
@@ -216,15 +253,15 @@ function renderTable(data) {
   }
   tbody.innerHTML = data.map(r => `
     <tr>
-      <td>${r.event_date}</td>
-      <td><strong>${r.group_name}</strong></td>
-      <td>${r.event_name || '-'}</td>
-      <td>${r.vendor || '-'}</td>
+      <td>${displayText(r.event_date)}</td>
+      <td><strong>${displayText(r.group_name)}</strong></td>
+      <td>${displayText(r.event_name)}</td>
+      <td>${displayText(r.vendor)}</td>
       <td class="num">${fmt(r.headcount)}명</td>
       <td class="num">${fmt(r.dc_amount)}</td>
       <td class="num">${fmt(r.deposit)}</td>
       <td class="num" style="color:#3b82f6;font-weight:600">${fmt(r.actual_sale)}</td>
-      <td>${r.manager || '-'}</td>
+      <td>${displayText(r.manager)}</td>
       <td>
         <button class="btn-edit" onclick="openEditModal(${r.id})">수정</button>
         <button class="btn-delete" onclick="deleteReservation(${r.id})">삭제</button>
@@ -256,6 +293,10 @@ function renderSummary({ count = 0, headcount = 0, deposit = 0, actual_sale = 0 
 // ========================
 const RES_FIELDS = ['event_date','group_name','event_name','vendor','sale_price','dc_sale_price',
   'headcount','dc_amount','deposit','actual_sale','phone','bank','account_number','account_holder','manager','memo'];
+let depositManual = false;
+let actualSaleManual = false;
+let lastAutoDeposit = '';
+let lastAutoActualSale = '';
 
 function calculateReservationAmounts() {
   const headcount = intValue('f-headcount');
@@ -263,15 +304,38 @@ function calculateReservationAmounts() {
   const dcSalePrice = numberValue('f-dc_sale_price');
   const deposit = headcount * dcAmount;
   const actualSale = headcount * dcSalePrice;
-  document.getElementById('f-deposit').value = deposit || '';
-  document.getElementById('f-actual_sale').value = actualSale || '';
+  const depositValue = deposit ? String(deposit) : '';
+  const actualSaleValue = actualSale ? String(actualSale) : '';
+  if (!depositManual) document.getElementById('f-deposit').value = depositValue;
+  if (!actualSaleManual) document.getElementById('f-actual_sale').value = actualSaleValue;
+  lastAutoDeposit = depositValue;
+  lastAutoActualSale = actualSaleValue;
   return { headcount, dcAmount, dcSalePrice, deposit, actualSale };
+}
+
+function markAmountManual(field) {
+  if (field === 'deposit') {
+    const value = document.getElementById('f-deposit').value;
+    depositManual = value !== '' && value !== lastAutoDeposit;
+  }
+  if (field === 'actual_sale') {
+    const value = document.getElementById('f-actual_sale').value;
+    actualSaleManual = value !== '' && value !== lastAutoActualSale;
+  }
+}
+
+function resetAmountManualFlags() {
+  depositManual = false;
+  actualSaleManual = false;
+  lastAutoDeposit = '';
+  lastAutoActualSale = '';
 }
 
 function openModal() {
   document.getElementById('modal-title').textContent = '예약 추가';
   document.getElementById('edit-id').value = '';
   RES_FIELDS.forEach(f => document.getElementById('f-' + f).value = '');
+  resetAmountManualFlags();
   calculateReservationAmounts();
   document.getElementById('modal').classList.add('open');
 }
@@ -282,6 +346,7 @@ function openEditModal(id) {
   document.getElementById('modal-title').textContent = '예약 수정';
   document.getElementById('edit-id').value = id;
   RES_FIELDS.forEach(f => document.getElementById('f-' + f).value = r[f] ?? '');
+  resetAmountManualFlags();
   document.getElementById('modal').classList.add('open');
 }
 
@@ -302,27 +367,27 @@ function closeModal() { document.getElementById('modal').classList.remove('open'
 function closeModalOutside(e) { if (e.target.id === 'modal') closeModal(); }
 
 async function upsertClient(name) {
-  const existing = clientsCache.find(c => c.name === name);
+  const existing = clientsCache.find(c => normalizeName(c.name) === normalizeName(name));
   if (existing) return existing.id;
   const res = await fetch('/api/clients/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
-  const created = await res.json();
+  const created = await parseJsonResponse(res);
   return created.id;
 }
 
 async function upsertVenue(name) {
   if (!name) return null;
-  const existing = venuesCache.find(v => v.name === name);
+  const existing = venuesCache.find(v => normalizeName(v.name) === normalizeName(name));
   if (existing) return existing.id;
   const res = await fetch('/api/venues/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
   });
-  const created = await res.json();
+  const created = await parseJsonResponse(res);
   return created.id;
 }
 
@@ -349,10 +414,16 @@ async function saveReservation() {
     if (!ok) return;
   }
 
-  const [clientId, venueId] = await Promise.all([
-    upsertClient(groupName),
-    upsertVenue(eventName),
-  ]);
+  let clientId, venueId;
+  try {
+    [clientId, venueId] = await Promise.all([
+      upsertClient(groupName),
+      upsertVenue(eventName),
+    ]);
+  } catch (err) {
+    await appAlert(err.message, '저장 오류', 'danger');
+    return;
+  }
 
   const payload = {
     event_date:     document.getElementById('f-event_date').value,
@@ -377,7 +448,12 @@ async function saveReservation() {
 
   const url = id ? `/api/reservations/${id}` : '/api/reservations/';
   const method = id ? 'PUT' : 'POST';
-  await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+  try {
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(parseJsonResponse);
+  } catch (err) {
+    await appAlert(err.message, '저장 오류', 'danger');
+    return;
+  }
   closeModal();
   await Promise.all([loadReservations(), loadVendors(), loadOptions()]);
 }
@@ -389,7 +465,12 @@ async function deleteReservation(id) {
     okText: '삭제',
   });
   if (!ok) return;
-  await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
+  try {
+    await fetch(`/api/reservations/${id}`, { method: 'DELETE' }).then(parseJsonResponse);
+  } catch (err) {
+    await appAlert(err.message, '삭제 오류', 'danger');
+    return;
+  }
   loadReservations();
 }
 
@@ -497,7 +578,7 @@ function renderVendorTable(data) {
   const total = data.reduce((s, r) => s + r.actual_sale, 0);
   document.getElementById('vendor-table').innerHTML = `
     <tr><th>업체</th><th style="text-align:right">건수</th><th style="text-align:right">인원</th><th style="text-align:right">매출</th><th style="text-align:right">비중</th></tr>
-    ${data.map(r => `<tr><td>${r.vendor}</td><td class="num">${r.count}건</td><td class="num">${fmt(r.headcount)}명</td><td class="num" style="color:#3b82f6;font-weight:600">${fmt(r.actual_sale)}원</td><td class="num">${total ? (r.actual_sale / total * 100).toFixed(1) + '%' : '-'}</td></tr>`).join('')}
+    ${data.map(r => `<tr><td>${displayText(r.vendor)}</td><td class="num">${r.count}건</td><td class="num">${fmt(r.headcount)}명</td><td class="num" style="color:#3b82f6;font-weight:600">${fmt(r.actual_sale)}원</td><td class="num">${total ? (r.actual_sale / total * 100).toFixed(1) + '%' : '-'}</td></tr>`).join('')}
     <tr style="background:#f8fafc;font-weight:700"><td>합계</td><td class="num">${data.reduce((s, r) => s + r.count, 0)}건</td><td class="num">${fmt(data.reduce((s, r) => s + r.headcount, 0))}명</td><td class="num" style="color:#10b981">${fmt(total)}원</td><td></td></tr>
   `;
 }
@@ -536,8 +617,8 @@ function renderVenuesTable() {
   document.getElementById('venues-tbody').innerHTML = slice.length
     ? slice.map(v => `
         <tr>
-          <td><strong>${v.name}</strong></td>
-          <td>${v.memo || '-'}</td>
+          <td><strong>${displayText(v.name)}</strong></td>
+          <td>${displayText(v.memo)}</td>
           <td>
             <button class="btn-edit" onclick="openVenueModal(${v.id})">수정</button>
             <button class="btn-delete" onclick="deleteVenue(${v.id})">삭제</button>
@@ -601,7 +682,12 @@ async function deleteVenue(id) {
     okText: '삭제',
   });
   if (!ok) return;
-  await fetch(`/api/venues/${id}`, { method: 'DELETE' });
+  try {
+    await fetch(`/api/venues/${id}`, { method: 'DELETE' }).then(parseJsonResponse);
+  } catch (err) {
+    await appAlert(err.message, '삭제 오류', 'danger');
+    return;
+  }
   await loadVenues();
   await loadOptions();
 }
@@ -643,11 +729,11 @@ function renderClientsTable() {
   document.getElementById('clients-tbody').innerHTML = data.length
     ? data.map(c => `
         <tr>
-          <td><strong>${c.name}</strong></td>
-          <td>${c.type ? `<span class="type-badge">${c.type}</span>` : '-'}</td>
-          <td>${c.phone || '-'}</td>
-          <td>${c.manager || '-'}</td>
-          <td>${c.bank ? c.bank + ' ' + (c.account_number || '') : '-'}</td>
+          <td><strong>${displayText(c.name)}</strong></td>
+          <td>${c.type ? `<span class="type-badge">${displayText(c.type)}</span>` : '-'}</td>
+          <td>${displayText(c.phone)}</td>
+          <td>${displayText(c.manager)}</td>
+          <td>${c.bank ? `${displayText(c.bank)} ${displayText(c.account_number, '')}` : '-'}</td>
           <td>
             <button class="btn-edit" onclick="openClientModal(${c.id})">수정</button>
             <button class="btn-delete" onclick="deleteClient(${c.id})">삭제</button>
@@ -709,7 +795,12 @@ async function deleteClient(id) {
     okText: '삭제',
   });
   if (!ok) return;
-  await fetch(`/api/clients/${id}`, { method: 'DELETE' });
+  try {
+    await fetch(`/api/clients/${id}`, { method: 'DELETE' }).then(parseJsonResponse);
+  } catch (err) {
+    await appAlert(err.message, '삭제 오류', 'danger');
+    return;
+  }
   await loadClients();
   await loadOptions();
 }

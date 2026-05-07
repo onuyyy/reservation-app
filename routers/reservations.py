@@ -86,8 +86,10 @@ def export_excel(year: Optional[int]=None, month: Optional[int]=None, vendor: Op
             c=ws.cell(row=ri,column=ci,value=v); c.border=border
             if ci in [5,6,8,9,10]: c.number_format="#,##0"
     tr=len(rows)+2; ws.cell(row=tr,column=1,value="합 계").font=Font(bold=True)
-    ws.cell(row=tr,column=7,value=f"=SUM(G2:G{tr-1})").font=Font(bold=True)
-    ws.cell(row=tr,column=10,value=f"=SUM(J2:J{tr-1})").font=Font(bold=True)
+    for col in [7,8,9,10]:
+        c = ws.cell(row=tr,column=col,value=f"=SUM({get_column_letter(col)}2:{get_column_letter(col)}{tr-1})")
+        c.font = Font(bold=True)
+        c.number_format = "#,##0"
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
     from urllib.parse import quote
     fn=f"예약내역_{year or 'ALL'}{'_'+str(month)+'월' if month else ''}.xlsx"

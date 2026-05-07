@@ -59,6 +59,11 @@
           </select>
           <select id="filter-vendor" onchange="loadReservations()"><option value="">전체 업체</option></select>
           <input type="text" id="filter-keyword" placeholder="단체명/행사명/담당자 검색" onkeyup="debounceSearch()">
+          <select id="sort-reservations" onchange="renderAll()" title="정렬 기준">
+            <option value="date-desc">최신순</option>
+            <option value="group-name">단체명</option>
+            <option value="event-name">행사명</option>
+          </select>
         </div>
         <button class="btn-export" onclick="exportExcel()">⬇ 엑셀 다운로드</button>
       </div>
@@ -189,8 +194,8 @@
         <div class="form-group"><label>DC후 판매가</label><input type="number" id="f-dc_sale_price" placeholder="0" oninput="calculateReservationAmounts()"></div>
         <div class="form-group"><label>인원</label><input type="number" id="f-headcount" placeholder="0" oninput="calculateReservationAmounts()"></div>
         <div class="form-group"><label>DC금액</label><input type="number" id="f-dc_amount" placeholder="0" oninput="calculateReservationAmounts()"></div>
-        <div class="form-group"><label>입금액</label><input type="number" id="f-deposit" placeholder="자동 계산 후 수정 가능"></div>
-        <div class="form-group"><label>실판매가 (수수료)</label><input type="number" id="f-actual_sale" placeholder="자동 계산 후 수정 가능"></div>
+        <div class="form-group"><label>입금액</label><input type="number" id="f-deposit" placeholder="자동 계산 후 수정 가능" oninput="markAmountManual('deposit')"></div>
+        <div class="form-group"><label>실판매가 (수수료)</label><input type="number" id="f-actual_sale" placeholder="자동 계산 후 수정 가능" oninput="markAmountManual('actual_sale')"></div>
         <div class="form-group"><label>전화번호</label><input type="text" id="f-phone"></div>
         <div class="form-group"><label>은행</label><input type="text" id="f-bank"></div>
         <div class="form-group"><label>계좌번호</label><input type="text" id="f-account_number"></div>
