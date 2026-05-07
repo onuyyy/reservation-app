@@ -172,7 +172,7 @@
         <div class="form-group"><label>행사일 *</label><input type="date" id="f-event_date"></div>
         <div class="form-group">
           <label>단체명 *</label>
-          <input type="text" id="f-group_name" placeholder="예) 경희태권도" list="client-name-list" onchange="onClientSelect(this.value)" autocomplete="off">
+          <input type="text" id="f-group_name" placeholder="예) 경희태권도" list="client-name-list" oninput="onClientSelect(this.value)" onchange="onClientSelect(this.value)" autocomplete="off">
           <datalist id="client-name-list"></datalist>
         </div>
         <div class="form-group">
@@ -186,11 +186,11 @@
           <datalist id="vendor-list"></datalist>
         </div>
         <div class="form-group"><label>판매가</label><input type="number" id="f-sale_price" placeholder="0"></div>
-        <div class="form-group"><label>DC후 판매가</label><input type="number" id="f-dc_sale_price" placeholder="0"></div>
-        <div class="form-group"><label>인원</label><input type="number" id="f-headcount" placeholder="0"></div>
-        <div class="form-group"><label>DC금액</label><input type="number" id="f-dc_amount" placeholder="0"></div>
-        <div class="form-group"><label>입금액</label><input type="number" id="f-deposit" placeholder="0"></div>
-        <div class="form-group"><label>실판매가 (수수료)</label><input type="number" id="f-actual_sale" placeholder="0"></div>
+        <div class="form-group"><label>DC후 판매가</label><input type="number" id="f-dc_sale_price" placeholder="0" oninput="calculateReservationAmounts()"></div>
+        <div class="form-group"><label>인원</label><input type="number" id="f-headcount" placeholder="0" oninput="calculateReservationAmounts()"></div>
+        <div class="form-group"><label>DC금액</label><input type="number" id="f-dc_amount" placeholder="0" oninput="calculateReservationAmounts()"></div>
+        <div class="form-group"><label>입금액</label><input type="number" id="f-deposit" placeholder="자동 계산 후 수정 가능"></div>
+        <div class="form-group"><label>실판매가 (수수료)</label><input type="number" id="f-actual_sale" placeholder="자동 계산 후 수정 가능"></div>
         <div class="form-group"><label>전화번호</label><input type="text" id="f-phone"></div>
         <div class="form-group"><label>은행</label><input type="text" id="f-bank"></div>
         <div class="form-group"><label>계좌번호</label><input type="text" id="f-account_number"></div>

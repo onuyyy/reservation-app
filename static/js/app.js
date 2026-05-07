@@ -29,6 +29,14 @@ function normalizeName(value) {
   return (value || '').trim().toLowerCase();
 }
 
+function numberValue(id) {
+  return parseFloat(document.getElementById(id).value) || 0;
+}
+
+function intValue(id) {
+  return parseInt(document.getElementById(id).value, 10) || 0;
+}
+
 function setFormError(errorId, inputId, message) {
   const errorEl = document.getElementById(errorId);
   const inputEl = document.getElementById(inputId);
@@ -249,10 +257,22 @@ function renderSummary({ count = 0, headcount = 0, deposit = 0, actual_sale = 0 
 const RES_FIELDS = ['event_date','group_name','event_name','vendor','sale_price','dc_sale_price',
   'headcount','dc_amount','deposit','actual_sale','phone','bank','account_number','account_holder','manager','memo'];
 
+function calculateReservationAmounts() {
+  const headcount = intValue('f-headcount');
+  const dcAmount = numberValue('f-dc_amount');
+  const dcSalePrice = numberValue('f-dc_sale_price');
+  const deposit = headcount * dcAmount;
+  const actualSale = headcount * dcSalePrice;
+  document.getElementById('f-deposit').value = deposit || '';
+  document.getElementById('f-actual_sale').value = actualSale || '';
+  return { headcount, dcAmount, dcSalePrice, deposit, actualSale };
+}
+
 function openModal() {
   document.getElementById('modal-title').textContent = '예약 추가';
   document.getElementById('edit-id').value = '';
   RES_FIELDS.forEach(f => document.getElementById('f-' + f).value = '');
+  calculateReservationAmounts();
   document.getElementById('modal').classList.add('open');
 }
 
@@ -266,10 +286,10 @@ function openEditModal(id) {
 }
 
 function onClientSelect(name) {
-  const client = clientsCache.find(c => c.name === name);
-  if (!client) return;
-  ['phone', 'bank', 'account_number', 'account_holder', 'manager'].forEach(f => {
-    document.getElementById('f-' + f).value = client[f] || '';
+  const clientFields = ['phone', 'bank', 'account_number', 'account_holder', 'manager'];
+  const client = clientsCache.find(c => normalizeName(c.name) === normalizeName(name));
+  clientFields.forEach(f => {
+    document.getElementById('f-' + f).value = client ? (client[f] || '') : '';
   });
 }
 
@@ -339,12 +359,12 @@ async function saveReservation() {
     group_name:     groupName,
     event_name:     eventName,
     vendor:         document.getElementById('f-vendor').value || eventName,
-    sale_price:     parseFloat(document.getElementById('f-sale_price').value) || 0,
-    dc_sale_price:  parseFloat(document.getElementById('f-dc_sale_price').value) || 0,
-    headcount:      parseInt(document.getElementById('f-headcount').value) || 0,
-    dc_amount:      parseFloat(document.getElementById('f-dc_amount').value) || 0,
-    deposit:        parseFloat(document.getElementById('f-deposit').value) || 0,
-    actual_sale:    parseFloat(document.getElementById('f-actual_sale').value) || 0,
+    sale_price:     numberValue('f-sale_price'),
+    dc_sale_price:  numberValue('f-dc_sale_price'),
+    headcount:      intValue('f-headcount'),
+    dc_amount:      numberValue('f-dc_amount'),
+    deposit:        numberValue('f-deposit'),
+    actual_sale:    numberValue('f-actual_sale'),
     phone:          document.getElementById('f-phone').value,
     bank:           document.getElementById('f-bank').value,
     account_number: document.getElementById('f-account_number').value,
