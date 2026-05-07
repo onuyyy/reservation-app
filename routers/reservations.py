@@ -57,6 +57,11 @@ def get_vendors(db: Session=Depends(get_db)):
     rows = db.query(Reservation.vendor).distinct().all()
     return [r.vendor for r in rows if r.vendor]
 
+@router.get("/years")
+def get_years(db: Session=Depends(get_db)):
+    rows = db.query(extract("year", Reservation.event_date).label("year")).distinct().order_by("year").all()
+    return [int(r.year) for r in rows]
+
 @router.get("/export/excel")
 def export_excel(year: Optional[int]=None, month: Optional[int]=None, vendor: Optional[str]=None, db: Session=Depends(get_db)):
     from openpyxl import Workbook

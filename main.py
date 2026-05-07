@@ -5,7 +5,7 @@ from database import init_db
 from routers import reservations
 from routers import venues, clients
 
-app = FastAPI(title="YY 예약 관리")
+app = FastAPI(title="예약 관리")
 init_db()
 app.include_router(reservations.router)
 app.include_router(venues.router)

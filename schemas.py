@@ -19,6 +19,8 @@ class ReservationCreate(BaseModel):
     account_holder: Optional[str] = ""
     manager: Optional[str] = ""
     memo: Optional[str] = ""
+    venue_id: Optional[int] = None
+    client_id: Optional[int] = None
 
 class ReservationUpdate(ReservationCreate):
     pass

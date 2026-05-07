@@ -18,20 +18,45 @@ document.querySelectorAll('.nav-item').forEach(item => {
 // Utilities
 // ========================
 const fmt = n => Number(n || 0).toLocaleString('ko-KR');
-let _dt, _cdt;
-function debounceSearch() { clearTimeout(_dt); _dt = setTimeout(loadReservations, 300); }
+let _dt, _cdt, _vdt;
+function debounceSearch()       { clearTimeout(_dt);  _dt  = setTimeout(loadReservations, 300); }
 function debounceClientSearch() { clearTimeout(_cdt); _cdt = setTimeout(filterClients, 300); }
+function debounceVenueSearch()  { clearTimeout(_vdt); _vdt = setTimeout(filterVenues, 300); }
 
-function fillYearOptions() {
+const PAGE_SIZE = 20;
+
+function renderPager(containerId, current, total, gotoFn) {
+  const el = document.getElementById(containerId);
+  if (total <= 1) { el.innerHTML = ''; return; }
+  const show = new Set(
+    [1, total, current, current-1, current+1, current-2, current+2].filter(p => p >= 1 && p <= total)
+  );
+  const sorted = [...show].sort((a, b) => a - b);
+  let html = `<div class="pager">`;
+  html += `<button class="pager-btn" ${current===1?'disabled':''} onclick="${gotoFn}(${current-1})">‹</button>`;
+  let prev = 0;
+  for (const p of sorted) {
+    if (prev && p - prev > 1) html += `<span class="pager-ellipsis">…</span>`;
+    html += `<button class="pager-btn${p===current?' active':''}" onclick="${gotoFn}(${p})">${p}</button>`;
+    prev = p;
+  }
+  html += `<button class="pager-btn" ${current===total?'disabled':''} onclick="${gotoFn}(${current+1})">›</button>`;
+  html += `</div>`;
+  el.innerHTML = html;
+}
+
+async function loadYearOptions() {
+  const years = await fetch('/api/reservations/years').then(r => r.json());
   const cur = new Date().getFullYear();
   ['filter-year', 'stats-year'].forEach(id => {
     const sel = document.getElementById(id);
-    for (let y = cur; y >= cur - 5; y--) {
+    const allYears = [...new Set([...years, cur])].sort((a, b) => b - a);
+    allYears.forEach(y => {
       const o = document.createElement('option');
       o.value = y; o.textContent = y + '년';
       if (y === cur) o.selected = true;
       sel.appendChild(o);
-    }
+    });
   });
 }
 
@@ -194,34 +219,81 @@ function onVenueSelect(name) {
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 function closeModalOutside(e) { if (e.target.id === 'modal') closeModal(); }
 
+async function upsertClient(name) {
+  const existing = clientsCache.find(c => c.name === name);
+  if (existing) return existing.id;
+  const res = await fetch('/api/clients/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const created = await res.json();
+  return created.id;
+}
+
+async function upsertVenue(name) {
+  if (!name) return null;
+  const existing = venuesCache.find(v => v.name === name);
+  if (existing) return existing.id;
+  const res = await fetch('/api/venues/', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name }),
+  });
+  const created = await res.json();
+  return created.id;
+}
+
 async function saveReservation() {
   const id = document.getElementById('edit-id').value;
-  const eventName = document.getElementById('f-event_name').value;
+  const groupName = document.getElementById('f-group_name').value.trim();
+  const eventName = document.getElementById('f-event_name').value.trim();
+  if (!document.getElementById('f-event_date').value || !groupName) {
+    alert('행사일과 단체명은 필수입니다.'); return;
+  }
+
+  const newItems = [];
+  if (groupName && !clientsCache.find(c => c.name === groupName))
+    newItems.push(`고객 "  ${groupName}"`);
+  if (eventName && !venuesCache.find(v => v.name === eventName))
+    newItems.push(`행사장 "${eventName}"`);
+
+  if (newItems.length > 0) {
+    const ok = confirm(`등록되지 않은 항목입니다:\n${newItems.join('\n')}\n\n새로 등록하고 저장하시겠습니까?`);
+    if (!ok) return;
+  }
+
+  const [clientId, venueId] = await Promise.all([
+    upsertClient(groupName),
+    upsertVenue(eventName),
+  ]);
+
   const payload = {
-    event_date: document.getElementById('f-event_date').value,
-    group_name: document.getElementById('f-group_name').value,
-    event_name: eventName,
-    vendor: document.getElementById('f-vendor').value || eventName,
-    sale_price: parseFloat(document.getElementById('f-sale_price').value) || 0,
-    dc_sale_price: parseFloat(document.getElementById('f-dc_sale_price').value) || 0,
-    headcount: parseInt(document.getElementById('f-headcount').value) || 0,
-    dc_amount: parseFloat(document.getElementById('f-dc_amount').value) || 0,
-    deposit: parseFloat(document.getElementById('f-deposit').value) || 0,
-    actual_sale: parseFloat(document.getElementById('f-actual_sale').value) || 0,
-    phone: document.getElementById('f-phone').value,
-    bank: document.getElementById('f-bank').value,
+    event_date:     document.getElementById('f-event_date').value,
+    group_name:     groupName,
+    event_name:     eventName,
+    vendor:         document.getElementById('f-vendor').value || eventName,
+    sale_price:     parseFloat(document.getElementById('f-sale_price').value) || 0,
+    dc_sale_price:  parseFloat(document.getElementById('f-dc_sale_price').value) || 0,
+    headcount:      parseInt(document.getElementById('f-headcount').value) || 0,
+    dc_amount:      parseFloat(document.getElementById('f-dc_amount').value) || 0,
+    deposit:        parseFloat(document.getElementById('f-deposit').value) || 0,
+    actual_sale:    parseFloat(document.getElementById('f-actual_sale').value) || 0,
+    phone:          document.getElementById('f-phone').value,
+    bank:           document.getElementById('f-bank').value,
     account_number: document.getElementById('f-account_number').value,
     account_holder: document.getElementById('f-account_holder').value,
-    manager: document.getElementById('f-manager').value,
-    memo: document.getElementById('f-memo').value,
+    manager:        document.getElementById('f-manager').value,
+    memo:           document.getElementById('f-memo').value,
+    client_id:      clientId,
+    venue_id:       venueId,
   };
-  if (!payload.event_date || !payload.group_name) { alert('행사일과 단체명은 필수입니다.'); return; }
+
   const url = id ? `/api/reservations/${id}` : '/api/reservations/';
   const method = id ? 'PUT' : 'POST';
   await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
   closeModal();
-  await loadReservations();
-  await loadVendors();
+  await Promise.all([loadReservations(), loadVendors(), loadOptions()]);
 }
 
 async function deleteReservation(id) {
@@ -248,39 +320,82 @@ async function loadStats() {
   const year = document.getElementById('stats-year').value || new Date().getFullYear();
   const month = document.getElementById('stats-month').value;
   const mData = await fetch(`/api/reservations/stats/monthly?year=${year}`).then(r => r.json());
-  renderMonthlyChart(mData);
-  renderMonthlyTable(mData);
+  renderMonthlyChart(mData, year);
+  renderMonthlyTable(mData, year);
   const p = new URLSearchParams({ year });
   if (month) p.append('month', month);
   const vData = await fetch('/api/reservations/stats/vendor?' + p).then(r => r.json());
   renderVendorTable(vData);
 }
 
-function renderMonthlyChart(data) {
+function renderMonthlyChart(data, year) {
   const canvas = document.getElementById('monthly-chart');
   const ctx = canvas.getContext('2d');
   canvas.width = canvas.offsetWidth || 800;
-  canvas.height = 200;
+  canvas.height = 220;
   const W = canvas.width, H = canvas.height;
-  const sales = Array.from({ length: 12 }, (_, i) => { const d = data.find(x => x.month === i + 1); return d ? d.actual_sale : 0; });
-  const max = Math.max(...sales, 1);
-  const barW = (W - 60) / 12;
-  ctx.clearRect(0, 0, W, H);
-  sales.forEach((v, i) => {
-    const x = 30 + i * barW + barW * 0.1, bw = barW * 0.8, bh = (v / max) * (H - 40), y = H - 30 - bh;
-    ctx.fillStyle = v > 0 ? '#3b82f6' : '#e2e8f0';
-    ctx.fillRect(x, y, bw, Math.max(bh, 2));
-    ctx.fillStyle = '#64748b'; ctx.font = '10px sans-serif'; ctx.textAlign = 'center';
-    ctx.fillText(`${i + 1}월`, x + bw / 2, H - 10);
-    if (v > 0) { ctx.fillStyle = '#1e293b'; ctx.font = '9px sans-serif'; ctx.fillText((v / 10000).toFixed(0) + '만', x + bw / 2, y - 4); }
+  const PAD_T = 28, PAD_B = 24, PAD_H = 8;
+  const chartH = H - PAD_T - PAD_B;
+  const barSlot = (W - PAD_H * 2) / 12;
+
+  const sales = Array.from({ length: 12 }, (_, i) => {
+    const d = data.find(x => x.month === i + 1);
+    return d ? d.actual_sale : 0;
   });
+  const max = Math.max(...sales, 1);
+
+  ctx.clearRect(0, 0, W, H);
+
+  // 1단계: 막대 전부 그리기
+  sales.forEach((v, i) => {
+    const bx = PAD_H + i * barSlot + barSlot * 0.1;
+    const bw = barSlot * 0.8;
+    const bh = (v / max) * chartH;
+    const by = PAD_T + chartH - bh;
+
+    ctx.fillStyle = v > 0 ? '#3b82f6' : '#e2e8f0';
+    ctx.fillRect(bx, by, bw, Math.max(bh, 2));
+
+    // 월 레이블 (하단)
+    ctx.fillStyle = '#64748b';
+    ctx.font = '10px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`${i + 1}월`, bx + bw / 2, H - 6);
+  });
+
+  // 2단계: 값 레이블 — 항상 막대 위쪽, 흰 배경 패드 위에 짙은 글씨
+  ctx.font = 'bold 9px sans-serif';
+  sales.forEach((v, i) => {
+    if (!v) return;
+    const bx = PAD_H + i * barSlot + barSlot * 0.1;
+    const bw = barSlot * 0.8;
+    const bh = (v / max) * chartH;
+    const by = PAD_T + chartH - bh;
+    const label = (v / 10000).toFixed(0) + '만';
+    const cx = bx + bw / 2;
+    const ty = by - 4;                          // 텍스트 베이스라인
+    const tw = ctx.measureText(label).width;
+    // 텍스트 뒤 흰 배경 (패딩 2px)
+    ctx.fillStyle = 'rgba(255,255,255,0.88)';
+    ctx.fillRect(cx - tw / 2 - 2, ty - 9, tw + 4, 12);
+    // 텍스트
+    ctx.fillStyle = '#1e3a5f';
+    ctx.textAlign = 'center';
+    ctx.fillText(label, cx, ty);
+  });
+
+  // 3단계: 연도 — 맨 마지막, 우상단 (막대에 안 가려짐)
+  ctx.font = 'bold 11px sans-serif';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#94a3b8';
+  ctx.fillText(`${year}년`, W - 6, 18);
 }
 
-function renderMonthlyTable(data) {
+function renderMonthlyTable(data, year) {
   const months = ['1월','2월','3월','4월','5월','6월','7월','8월','9월','10월','11월','12월'];
   const tH = data.reduce((s, r) => s + r.headcount, 0), tS = data.reduce((s, r) => s + r.actual_sale, 0);
   document.getElementById('monthly-table').innerHTML = `
-    <tr><th>구분</th>${months.map(m => `<th style="text-align:right">${m}</th>`).join('')}<th style="text-align:right">합계</th></tr>
+    <tr><th>${year}년</th>${months.map(m => `<th style="text-align:right">${m}</th>`).join('')}<th style="text-align:right">합계</th></tr>
     <tr><td>인원</td>${Array.from({ length: 12 }, (_, i) => { const d = data.find(x => x.month === i + 1); return `<td class="num">${d && d.headcount ? fmt(d.headcount) : '-'}</td>`; }).join('')}<td class="num"><strong>${fmt(tH)}</strong></td></tr>
     <tr><td>매출</td>${Array.from({ length: 12 }, (_, i) => { const d = data.find(x => x.month === i + 1); return `<td class="num">${d && d.actual_sale ? fmt(d.actual_sale) : '-'}</td>`; }).join('')}<td class="num"><strong>${fmt(tS)}</strong></td></tr>
   `;
@@ -300,15 +415,35 @@ function renderVendorTable(data) {
 // Venues Page
 // ========================
 let venuesData = [];
+let venuesFiltered = [];
+let venuesPage = 1;
 
 async function loadVenues() {
   venuesData = await fetch('/api/venues/').then(r => r.json());
-  renderVenuesTable(venuesData);
+  venuesPage = 1;
+  filterVenues();
 }
 
-function renderVenuesTable(data) {
-  document.getElementById('venues-tbody').innerHTML = data.length
-    ? data.map(v => `
+function filterVenues() {
+  const kw = document.getElementById('venue-keyword').value.toLowerCase();
+  venuesFiltered = venuesData.filter(v =>
+    v.name.toLowerCase().includes(kw) || (v.memo || '').toLowerCase().includes(kw)
+  );
+  venuesPage = 1;
+  document.getElementById('venue-count').textContent = `총 ${venuesFiltered.length}개`;
+  renderVenuesTable();
+}
+
+function gotoVenuePage(page) {
+  venuesPage = page;
+  renderVenuesTable();
+}
+
+function renderVenuesTable() {
+  const total = Math.ceil(venuesFiltered.length / PAGE_SIZE);
+  const slice = venuesFiltered.slice((venuesPage-1)*PAGE_SIZE, venuesPage*PAGE_SIZE);
+  document.getElementById('venues-tbody').innerHTML = slice.length
+    ? slice.map(v => `
         <tr>
           <td><strong>${v.name}</strong></td>
           <td>${v.memo || '-'}</td>
@@ -318,6 +453,7 @@ function renderVenuesTable(data) {
           </td>
         </tr>`).join('')
     : '<tr><td colspan="3" class="empty">등록된 행사장이 없습니다.</td></tr>';
+  renderPager('venues-pager', venuesPage, total, 'gotoVenuePage');
 }
 
 function openVenueModal(id) {
@@ -365,25 +501,36 @@ async function deleteVenue(id) {
 // Clients Page
 // ========================
 let clientsData = [];
+let clientsFiltered = [];
+let clientsPage = 1;
 
 async function loadClients() {
   clientsData = await fetch('/api/clients/').then(r => r.json());
+  clientsPage = 1;
   filterClients();
 }
 
 function filterClients() {
   const type = document.getElementById('client-type-filter').value;
   const kw = document.getElementById('client-keyword').value.toLowerCase();
-  let data = clientsData;
-  if (type) data = data.filter(c => c.type === type);
-  if (kw) data = data.filter(c =>
+  clientsFiltered = clientsData;
+  if (type) clientsFiltered = clientsFiltered.filter(c => c.type === type);
+  if (kw)  clientsFiltered = clientsFiltered.filter(c =>
     c.name.toLowerCase().includes(kw) || (c.manager || '').toLowerCase().includes(kw)
   );
-  document.getElementById('client-count').textContent = `총 ${data.length}명`;
-  renderClientsTable(data);
+  clientsPage = 1;
+  document.getElementById('client-count').textContent = `총 ${clientsFiltered.length}명`;
+  renderClientsTable();
 }
 
-function renderClientsTable(data) {
+function gotoClientPage(page) {
+  clientsPage = page;
+  renderClientsTable();
+}
+
+function renderClientsTable() {
+  const total = Math.ceil(clientsFiltered.length / PAGE_SIZE);
+  const data = clientsFiltered.slice((clientsPage-1)*PAGE_SIZE, clientsPage*PAGE_SIZE);
   document.getElementById('clients-tbody').innerHTML = data.length
     ? data.map(c => `
         <tr>
@@ -398,6 +545,7 @@ function renderClientsTable(data) {
           </td>
         </tr>`).join('')
     : '<tr><td colspan="6" class="empty">등록된 고객이 없습니다.</td></tr>';
+  renderPager('clients-pager', clientsPage, total, 'gotoClientPage');
 }
 
 const CLIENT_FIELDS = ['name','type','phone','bank','account_number','account_holder','manager','memo'];
@@ -441,7 +589,7 @@ async function deleteClient(id) {
 // ========================
 // Init
 // ========================
-fillYearOptions();
+loadYearOptions();
 loadOptions();
 loadVendors();
 loadReservations();

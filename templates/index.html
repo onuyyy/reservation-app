@@ -2,13 +2,35 @@
 <html lang="ko">
 <head>
 <meta charset="UTF-8">
-<title>YY 예약 관리</title>
+<title>예약 관리</title>
 <link rel="stylesheet" href="/static/css/style.css">
 </head>
 <body>
 <div class="layout">
   <nav class="sidebar">
-    <div class="logo">YY<span>예약관리</span></div>
+    <div class="logo">
+      <svg viewBox="0 0 200 200" width="80" height="80" xmlns="http://www.w3.org/2000/svg" aria-label="SUN WORLD">
+        <g transform="translate(100,90)">
+          <line x1="0" y1="-62" x2="0" y2="-50" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="0" y1="50" x2="0" y2="62" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="-62" y1="0" x2="-50" y2="0" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="50" y1="0" x2="62" y2="0" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="-44" y1="-44" x2="-36" y2="-36" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="36" y1="36" x2="44" y2="44" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="44" y1="-44" x2="36" y2="-36" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <line x1="-36" y1="36" x2="-44" y2="44" stroke="#FFB800" stroke-width="3.5" stroke-linecap="round"/>
+          <circle cx="0" cy="0" r="42" fill="#FFB800"/>
+          <rect x="-19" y="-12" width="38" height="24" rx="4" fill="#1e2a3a"/>
+          <circle cx="-19" cy="-5" r="3.5" fill="#FFB800"/>
+          <circle cx="-19" cy="5" r="3.5" fill="#FFB800"/>
+          <line x1="-12" y1="-6" x2="14" y2="-6" stroke="#FFB800" stroke-width="2.2" stroke-linecap="round"/>
+          <line x1="-12" y1="0" x2="14" y2="0" stroke="#FFB800" stroke-width="1.8" stroke-linecap="round"/>
+          <line x1="-12" y1="6" x2="10" y2="6" stroke="#FFB800" stroke-width="1.8" stroke-linecap="round"/>
+        </g>
+        <text x="100" y="155" font-family="sans-serif" font-size="28" font-weight="800" fill="#ffffff" text-anchor="middle" letter-spacing="3">SUN</text>
+        <text x="100" y="185" font-family="sans-serif" font-size="28" font-weight="800" fill="#FFB800" text-anchor="middle" letter-spacing="3">WORLD</text>
+      </svg>
+    </div>
     <ul class="nav-menu">
       <li class="nav-item active" data-page="reservations">📋 예약 내역</li>
       <li class="nav-item" data-page="stats">📊 통계</li>
@@ -92,6 +114,10 @@
         <h1>행사장 관리</h1>
         <button class="btn btn-primary" onclick="openVenueModal()">+ 행사장 추가</button>
       </div>
+      <div class="mgmt-filter">
+        <input type="text" id="venue-keyword" placeholder="행사장명 / 메모 검색" onkeyup="debounceVenueSearch()">
+        <span id="venue-count" class="mgmt-count"></span>
+      </div>
       <div class="table-wrap">
         <table>
           <thead>
@@ -100,6 +126,7 @@
           <tbody id="venues-tbody"></tbody>
         </table>
       </div>
+      <div id="venues-pager"></div>
     </div>
 
     <!-- ===== 고객 관리 ===== -->
@@ -126,6 +153,7 @@
           <tbody id="clients-tbody"></tbody>
         </table>
       </div>
+      <div id="clients-pager"></div>
     </div>
 
   </main>

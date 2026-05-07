@@ -5,8 +5,8 @@ body{font-family:'Noto Sans KR',sans-serif;background:var(--bg);color:var(--text
 
 /* ===== Sidebar ===== */
 .sidebar{width:200px;background:var(--sidebar);display:flex;flex-direction:column;flex-shrink:0}
-.logo{color:#fff;font-size:18px;font-weight:800;padding:24px 20px 32px}
-.logo span{display:block;font-size:11px;font-weight:400;color:#94a3b8;margin-top:2px}
+.logo{padding:18px 20px 26px;display:flex;justify-content:center}
+.logo svg{display:block;width:92px;height:92px}
 .nav-menu{list-style:none;padding:0 10px}
 .nav-item{color:#94a3b8;padding:12px 14px;border-radius:8px;cursor:pointer;margin-bottom:4px;font-size:13px;transition:all .2s}
 .nav-item:hover{background:var(--sidebar-hover);color:#fff}
@@ -84,6 +84,14 @@ tfoot td{padding:11px 14px;font-size:13px;font-weight:700}
 .form-group label{font-size:12px;color:var(--text-light);font-weight:600}
 .form-group input,.form-group textarea,.form-group select{padding:9px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px;outline:none;font-family:inherit;color:var(--text)}
 .form-group input:focus,.form-group textarea:focus,.form-group select:focus{border-color:var(--primary)}
+
+/* ===== Pager ===== */
+.pager{display:flex;justify-content:center;align-items:center;gap:4px;padding:16px 0}
+.pager-btn{min-width:32px;height:32px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:#fff;color:var(--text);font-size:13px;cursor:pointer;transition:all .15s}
+.pager-btn:hover:not(:disabled){background:var(--primary);color:#fff;border-color:var(--primary)}
+.pager-btn.active{background:var(--primary);color:#fff;border-color:var(--primary);font-weight:600}
+.pager-btn:disabled{color:#cbd5e1;cursor:default}
+.pager-ellipsis{color:var(--text-light);padding:0 4px}
 
 /* ===== Stats ===== */
 .stats-grid{display:grid;gap:18px}
