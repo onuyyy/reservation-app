@@ -25,6 +25,68 @@ function debounceVenueSearch()  { clearTimeout(_vdt); _vdt = setTimeout(filterVe
 
 const PAGE_SIZE = 20;
 
+function normalizeName(value) {
+  return (value || '').trim().toLowerCase();
+}
+
+function setFormError(errorId, inputId, message) {
+  const errorEl = document.getElementById(errorId);
+  const inputEl = document.getElementById(inputId);
+  if (!errorEl || !inputEl) return;
+  errorEl.textContent = message || '';
+  errorEl.classList.toggle('show', Boolean(message));
+  inputEl.classList.toggle('input-error', Boolean(message));
+  if (message) inputEl.focus();
+}
+
+function appDialog({ title = '알림', message = '', type = 'info', okText = '확인', cancelText = '취소', showCancel = false } = {}) {
+  const overlay = document.getElementById('app-dialog');
+  const titleEl = document.getElementById('app-dialog-title');
+  const messageEl = document.getElementById('app-dialog-message');
+  const iconEl = document.getElementById('app-dialog-icon');
+  const okBtn = document.getElementById('app-dialog-ok');
+  const cancelBtn = document.getElementById('app-dialog-cancel');
+
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  okBtn.textContent = okText;
+  cancelBtn.textContent = cancelText;
+  cancelBtn.style.display = showCancel ? '' : 'none';
+  iconEl.className = `dialog-icon ${type}`;
+  iconEl.textContent = type === 'danger' ? '!' : type === 'warning' ? '?' : 'i';
+  overlay.classList.add('open');
+
+  return new Promise(resolve => {
+    const close = result => {
+      overlay.classList.remove('open');
+      okBtn.removeEventListener('click', onOk);
+      cancelBtn.removeEventListener('click', onCancel);
+      overlay.removeEventListener('click', onOverlay);
+      document.removeEventListener('keydown', onKeydown);
+      resolve(result);
+    };
+    const onOk = () => close(true);
+    const onCancel = () => close(false);
+    const onOverlay = e => { if (e.target === overlay) close(false); };
+    const onKeydown = e => {
+      if (e.key === 'Escape') close(false);
+      if (e.key === 'Enter') close(true);
+    };
+
+    okBtn.addEventListener('click', onOk);
+    cancelBtn.addEventListener('click', onCancel);
+    overlay.addEventListener('click', onOverlay);
+    document.addEventListener('keydown', onKeydown);
+    okBtn.focus();
+  });
+}
+
+const appAlert = (message, title = '알림', type = 'info') =>
+  appDialog({ title, message, type, okText: '확인' });
+
+const appConfirm = (message, { title = '확인', type = 'warning', okText = '확인', cancelText = '취소' } = {}) =>
+  appDialog({ title, message, type, okText, cancelText, showCancel: true });
+
 function renderPager(containerId, current, total, gotoFn) {
   const el = document.getElementById(containerId);
   if (total <= 1) { el.innerHTML = ''; return; }
@@ -249,7 +311,8 @@ async function saveReservation() {
   const groupName = document.getElementById('f-group_name').value.trim();
   const eventName = document.getElementById('f-event_name').value.trim();
   if (!document.getElementById('f-event_date').value || !groupName) {
-    alert('행사일과 단체명은 필수입니다.'); return;
+    await appAlert('행사일과 단체명을 입력해 주세요.', '필수 항목 확인', 'warning');
+    return;
   }
 
   const newItems = [];
@@ -259,7 +322,10 @@ async function saveReservation() {
     newItems.push(`행사장 "${eventName}"`);
 
   if (newItems.length > 0) {
-    const ok = confirm(`등록되지 않은 항목입니다:\n${newItems.join('\n')}\n\n새로 등록하고 저장하시겠습니까?`);
+    const ok = await appConfirm(
+      `등록되지 않은 항목입니다:\n${newItems.join('\n')}\n\n새로 등록하고 저장하시겠습니까?`,
+      { title: '새 항목 등록', okText: '등록하고 저장' }
+    );
     if (!ok) return;
   }
 
@@ -297,7 +363,12 @@ async function saveReservation() {
 }
 
 async function deleteReservation(id) {
-  if (!confirm('삭제하시겠습니까?')) return;
+  const ok = await appConfirm('선택한 예약을 삭제하시겠습니까?', {
+    title: '예약 삭제',
+    type: 'danger',
+    okText: '삭제',
+  });
+  if (!ok) return;
   await fetch(`/api/reservations/${id}`, { method: 'DELETE' });
   loadReservations();
 }
@@ -458,6 +529,7 @@ function renderVenuesTable() {
 
 function openVenueModal(id) {
   document.getElementById('venue-edit-id').value = id || '';
+  setFormError('venue-error', 'vf-name', '');
   if (id) {
     const v = venuesData.find(x => x.id === id);
     document.getElementById('vf-name').value = v?.name || '';
@@ -480,18 +552,35 @@ async function saveVenue() {
     name: document.getElementById('vf-name').value.trim(),
     memo: document.getElementById('vf-memo').value.trim(),
   };
-  if (!payload.name) { alert('행사장명은 필수입니다.'); return; }
+  if (!payload.name) {
+    setFormError('venue-error', 'vf-name', '행사장명을 입력해 주세요.');
+    return;
+  }
+  const duplicate = venuesData.find(v => normalizeName(v.name) === normalizeName(payload.name) && String(v.id) !== String(id));
+  if (duplicate) {
+    setFormError('venue-error', 'vf-name', `이미 등록된 행사장입니다: ${payload.name}`);
+    return;
+  }
   const url = id ? `/api/venues/${id}` : '/api/venues/';
   const method = id ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  if (!res.ok) { const err = await res.json().catch(() => ({})); alert(err.detail || '저장 실패'); return; }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    setFormError('venue-error', 'vf-name', err.detail || `이미 등록된 행사장인지 확인해 주세요: ${payload.name}`);
+    return;
+  }
   closeVenueModal();
   await loadVenues();
   await loadOptions();
 }
 
 async function deleteVenue(id) {
-  if (!confirm('삭제하시겠습니까?')) return;
+  const ok = await appConfirm('선택한 행사장을 삭제하시겠습니까?', {
+    title: '행사장 삭제',
+    type: 'danger',
+    okText: '삭제',
+  });
+  if (!ok) return;
   await fetch(`/api/venues/${id}`, { method: 'DELETE' });
   await loadVenues();
   await loadOptions();
@@ -552,6 +641,7 @@ const CLIENT_FIELDS = ['name','type','phone','bank','account_number','account_ho
 
 function openClientModal(id) {
   document.getElementById('client-edit-id').value = id || '';
+  setFormError('client-error', 'cf-name', '');
   if (id) {
     const c = clientsData.find(x => x.id === id);
     CLIENT_FIELDS.forEach(f => document.getElementById('cf-' + f).value = c?.[f] || '');
@@ -569,18 +659,36 @@ function closeClientModalOutside(e) { if (e.target.id === 'client-modal') closeC
 async function saveClient() {
   const id = document.getElementById('client-edit-id').value;
   const payload = Object.fromEntries(CLIENT_FIELDS.map(f => [f, document.getElementById('cf-' + f).value]));
-  if (!payload.name.trim()) { alert('단체명은 필수입니다.'); return; }
+  payload.name = payload.name.trim();
+  if (!payload.name) {
+    setFormError('client-error', 'cf-name', '단체명을 입력해 주세요.');
+    return;
+  }
+  const duplicate = clientsData.find(c => normalizeName(c.name) === normalizeName(payload.name) && String(c.id) !== String(id));
+  if (duplicate) {
+    setFormError('client-error', 'cf-name', `이미 등록된 고객입니다: ${payload.name}`);
+    return;
+  }
   const url = id ? `/api/clients/${id}` : '/api/clients/';
   const method = id ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
-  if (!res.ok) { const err = await res.json().catch(() => ({})); alert(err.detail || '저장 실패'); return; }
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    setFormError('client-error', 'cf-name', err.detail || `이미 등록된 고객인지 확인해 주세요: ${payload.name}`);
+    return;
+  }
   closeClientModal();
   await loadClients();
   await loadOptions();
 }
 
 async function deleteClient(id) {
-  if (!confirm('삭제하시겠습니까?')) return;
+  const ok = await appConfirm('선택한 고객을 삭제하시겠습니까?', {
+    title: '고객 삭제',
+    type: 'danger',
+    okText: '삭제',
+  });
+  if (!ok) return;
   await fetch(`/api/clients/${id}`, { method: 'DELETE' });
   await loadClients();
   await loadOptions();
