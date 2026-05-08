@@ -32,20 +32,63 @@
       </svg>
     </div>
     <ul class="nav-menu">
-      <li class="nav-item active" data-page="reservations">📋 예약 내역</li>
-      <li class="nav-item" data-page="stats">📊 통계</li>
+      <li class="nav-item active" data-page="calendar">📅 가예약 캘린더</li>
+      <li class="nav-item" data-page="eventsheet">📋 행사표</li>
+      <li class="nav-item" data-page="reservations">💰 정산내역</li>
       <li class="nav-divider"></li>
+      <li class="nav-item" data-page="stats">📊 통계</li>
       <li class="nav-item" data-page="venues">🏟 행사장 관리</li>
       <li class="nav-item" data-page="clients">👥 고객 관리</li>
     </ul>
   </nav>
   <main class="main">
 
-    <!-- ===== 예약 내역 ===== -->
-    <div id="page-reservations" class="page active">
+    <!-- ===== 캘린더 ===== -->
+    <div id="page-calendar" class="page active">
+      <div class="cal-nav">
+        <button onclick="prevMonth()">◀</button>
+        <span id="cal-title">2026년 5월</span>
+        <button onclick="nextMonth()">▶</button>
+        <button class="btn btn-primary" onclick="openEventModal(null, todayStr())">+ 가예약 일정</button>
+      </div>
+      <div class="calendar-grid">
+        <div class="cal-header-row">
+          <div>일</div><div>월</div><div>화</div><div>수</div><div>목</div><div>금</div><div>토</div>
+        </div>
+        <div id="cal-body" class="cal-weeks"></div>
+      </div>
+    </div>
+
+    <!-- ===== 행사표 ===== -->
+    <div id="page-eventsheet" class="page">
       <div class="page-header">
-        <h1>예약 내역</h1>
-        <button class="btn btn-primary" onclick="openModal()">+ 예약 추가</button>
+        <h1>행사표</h1>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" id="sheet-date" style="padding:7px 12px;border:1px solid var(--border);border-radius:7px;font-size:13px">
+          <button class="btn btn-primary" onclick="loadEventSheet()">조회</button>
+          <button class="btn-export" onclick="exportEventSheet()">⬇ 엑셀 출력</button>
+        </div>
+      </div>
+      <div id="sheet-summary" style="margin-bottom:12px;color:var(--text-light);font-size:13px"></div>
+      <div class="table-wrap">
+        <table id="sheet-table">
+          <thead>
+            <tr>
+              <th>NO</th><th>행사장</th><th>단체명</th><th>예상 인원</th>
+              <th>전화</th><th>담당자</th><th>식사</th><th>차량</th><th>메모</th><th>정산</th><th>행사표 제외</th>
+            </tr>
+          </thead>
+          <tbody id="sheet-tbody"></tbody>
+        </table>
+      </div>
+      <p class="sheet-hint">캘린더에서 "행사표 포함"으로 표시한 일정만 조회됩니다. 전날 예상 인원을 정리한 뒤 엑셀로 출력하거나 정산 등록으로 넘길 수 있습니다.</p>
+    </div>
+
+    <!-- ===== 정산 내역 ===== -->
+    <div id="page-reservations" class="page">
+      <div class="page-header">
+        <h1>정산 내역</h1>
+        <button class="btn btn-primary" onclick="openModal()">+ 정산 추가</button>
       </div>
       <div class="filter-bar">
         <div class="filter-group">
@@ -74,7 +117,8 @@
           <thead>
             <tr>
               <th>행사일</th><th>단체명</th><th>행사명</th><th>업체</th>
-              <th>인원</th><th>DC금액</th><th>입금액</th><th>실판매가</th><th>담당자</th><th>관리</th>
+              <th>인원</th><th>DC금액</th><th>입금액</th><th>실판매가</th>
+              <th>담당자</th><th>은행</th><th>계좌번호</th><th>예금주</th><th>비고</th><th>관리</th>
             </tr>
           </thead>
           <tbody id="res-tbody"></tbody>
@@ -85,7 +129,7 @@
               <td id="total-dc" class="num"></td>
               <td id="total-deposit" class="num"></td>
               <td id="total-actual" class="num"></td>
-              <td colspan="2"></td>
+              <td colspan="6"></td>
             </tr>
           </tfoot>
         </table>
@@ -153,7 +197,7 @@
       <div class="table-wrap">
         <table>
           <thead>
-            <tr><th>단체명</th><th>구분</th><th>전화번호</th><th>담당자</th><th>은행 / 계좌</th><th style="width:120px">관리</th></tr>
+            <tr><th>단체명</th><th>구분</th><th>전화번호</th><th>담당자</th><th style="width:120px">관리</th></tr>
           </thead>
           <tbody id="clients-tbody"></tbody>
         </table>
@@ -164,15 +208,75 @@
   </main>
 </div>
 
-<!-- ===== 예약 모달 ===== -->
+<!-- ===== 캘린더 일정 모달 ===== -->
+<div id="event-modal" class="modal-overlay" onclick="closeEventModalOutside(event)">
+  <div class="modal modal-sm">
+    <div class="modal-header">
+    <h2 id="event-modal-title">가예약 일정 추가</h2>
+      <button class="modal-close" onclick="closeEventModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid" style="grid-template-columns:1fr">
+        <div class="form-group">
+          <label>날짜</label>
+          <input type="date" id="modal-date">
+        </div>
+        <div class="form-group">
+          <label>행사장</label>
+          <input type="text" id="modal-venue" list="venue-name-list" placeholder="에버, 서울랜드, 볼베어 등" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>단체명</label>
+          <input type="text" id="modal-client" list="client-name-list" placeholder="가온시흥, 경희대라이언 등" oninput="onCalendarClientSelect(this.value)" onchange="onCalendarClientSelect(this.value)" autocomplete="off">
+        </div>
+        <div class="form-group">
+          <label>예상 인원</label>
+          <input type="number" id="modal-headcount" placeholder="0">
+        </div>
+        <div class="form-group">
+          <label>전화</label>
+          <input type="text" id="modal-phone">
+        </div>
+        <div class="form-group">
+          <label>담당자</label>
+          <input type="text" id="modal-manager">
+        </div>
+        <div class="form-group">
+          <label>식사</label>
+          <input type="text" id="modal-meal" placeholder="치즈, 케익 등">
+        </div>
+        <div class="form-group">
+          <label>차량</label>
+          <input type="text" id="modal-vehicle" placeholder="45인승 등">
+        </div>
+        <div class="form-group">
+          <label>메모</label>
+          <input type="text" id="modal-note" placeholder="인솔2, 도시락, 밀크폰 등">
+        </div>
+        <div class="form-group" style="flex-direction:row;align-items:center;gap:10px">
+          <input type="checkbox" id="modal-confirmed" style="width:16px;height:16px">
+          <label for="modal-confirmed" style="font-size:13px;color:var(--text);font-weight:600;cursor:pointer">행사표 포함</label>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-cancel" id="event-delete-btn" onclick="deleteEvent()" style="display:none;background:#fee2e2;color:#ef4444">삭제</button>
+      <button class="btn btn-cancel" onclick="closeEventModal()">취소</button>
+      <button class="btn btn-primary" onclick="saveEvent()">저장</button>
+    </div>
+  </div>
+</div>
+
+<!-- ===== 정산 모달 ===== -->
 <div id="modal" class="modal-overlay" onclick="closeModalOutside(event)">
   <div class="modal">
     <div class="modal-header">
-      <h2 id="modal-title">예약 추가</h2>
+      <h2 id="modal-title">정산 추가</h2>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
     <div class="modal-body">
       <input type="hidden" id="edit-id">
+      <input type="hidden" id="f-calendar_event_id">
       <div class="form-grid">
         <div class="form-group"><label>행사일 *</label><input type="date" id="f-event_date"></div>
         <div class="form-group">
@@ -201,7 +305,7 @@
         <div class="form-group"><label>계좌번호</label><input type="text" id="f-account_number"></div>
         <div class="form-group"><label>예금주</label><input type="text" id="f-account_holder"></div>
         <div class="form-group"><label>담당자</label><input type="text" id="f-manager"></div>
-        <div class="form-group full"><label>메모</label><textarea id="f-memo" rows="2"></textarea></div>
+        <div class="form-group full"><label>비고</label><textarea id="f-memo" rows="2"></textarea></div>
       </div>
     </div>
     <div class="modal-footer">
@@ -256,9 +360,6 @@
         </div>
         <div class="form-group"><label>전화번호</label><input type="text" id="cf-phone"></div>
         <div class="form-group"><label>담당자</label><input type="text" id="cf-manager"></div>
-        <div class="form-group"><label>은행</label><input type="text" id="cf-bank"></div>
-        <div class="form-group"><label>계좌번호</label><input type="text" id="cf-account_number"></div>
-        <div class="form-group"><label>예금주</label><input type="text" id="cf-account_holder"></div>
         <div class="form-group full"><label>메모</label><textarea id="cf-memo" rows="2"></textarea></div>
       </div>
     </div>

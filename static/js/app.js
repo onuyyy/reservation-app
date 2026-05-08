@@ -2,17 +2,20 @@
 // Navigation
 // ========================
 document.querySelectorAll('.nav-item').forEach(item => {
-  item.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-    item.classList.add('active');
-    document.getElementById(`page-${item.dataset.page}`).classList.add('active');
-    const page = item.dataset.page;
-    if (page === 'stats') loadStats();
-    else if (page === 'venues') loadVenues();
-    else if (page === 'clients') loadClients();
-  });
+  item.addEventListener('click', () => switchPage(item.dataset.page));
 });
+
+function switchPage(page) {
+  document.querySelectorAll('.nav-item').forEach(i => i.classList.toggle('active', i.dataset.page === page));
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  if (page === 'reservations') loadReservations();
+  else if (page === 'eventsheet') loadEventSheet();
+  else if (page === 'calendar') loadCalendar();
+  else if (page === 'stats') loadStats();
+  else if (page === 'venues') loadVenues();
+  else if (page === 'clients') loadClients();
+}
 
 // ========================
 // Utilities
@@ -246,7 +249,7 @@ function setDateTab(date) {
 function renderTable(data) {
   const tbody = document.getElementById('res-tbody');
   if (!data.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">예약 내역이 없습니다.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="14" class="empty">정산 내역이 없습니다.</td></tr>';
     renderSummary({});
     ['total-headcount', 'total-dc', 'total-deposit', 'total-actual'].forEach(id => document.getElementById(id).textContent = '');
     return;
@@ -262,6 +265,10 @@ function renderTable(data) {
       <td class="num">${fmt(r.deposit)}</td>
       <td class="num" style="color:#3b82f6;font-weight:600">${fmt(r.actual_sale)}</td>
       <td>${displayText(r.manager)}</td>
+      <td>${displayText(r.bank)}</td>
+      <td>${displayText(r.account_number)}</td>
+      <td>${displayText(r.account_holder)}</td>
+      <td>${displayText(r.memo)}</td>
       <td>
         <button class="btn-edit" onclick="openEditModal(${r.id})">수정</button>
         <button class="btn-delete" onclick="deleteReservation(${r.id})">삭제</button>
@@ -292,7 +299,7 @@ function renderSummary({ count = 0, headcount = 0, deposit = 0, actual_sale = 0 
 // Reservation Modal
 // ========================
 const RES_FIELDS = ['event_date','group_name','event_name','vendor','sale_price','dc_sale_price',
-  'headcount','dc_amount','deposit','actual_sale','phone','bank','account_number','account_holder','manager','memo'];
+  'headcount','dc_amount','deposit','actual_sale','phone','bank','account_number','account_holder','manager','memo','calendar_event_id'];
 let depositManual = false;
 let actualSaleManual = false;
 let lastAutoDeposit = '';
@@ -331,10 +338,17 @@ function resetAmountManualFlags() {
   lastAutoActualSale = '';
 }
 
-function openModal() {
-  document.getElementById('modal-title').textContent = '예약 추가';
+function openModal(prefill = null) {
+  document.getElementById('modal-title').textContent = prefill ? '정산 등록' : '정산 추가';
   document.getElementById('edit-id').value = '';
   RES_FIELDS.forEach(f => document.getElementById('f-' + f).value = '');
+  if (prefill) {
+    RES_FIELDS.forEach(f => {
+      if (Object.prototype.hasOwnProperty.call(prefill, f)) {
+        document.getElementById('f-' + f).value = prefill[f] ?? '';
+      }
+    });
+  }
   resetAmountManualFlags();
   calculateReservationAmounts();
   document.getElementById('modal').classList.add('open');
@@ -343,7 +357,7 @@ function openModal() {
 function openEditModal(id) {
   const r = allData.find(x => x.id === id);
   if (!r) return;
-  document.getElementById('modal-title').textContent = '예약 수정';
+  document.getElementById('modal-title').textContent = '정산 수정';
   document.getElementById('edit-id').value = id;
   RES_FIELDS.forEach(f => document.getElementById('f-' + f).value = r[f] ?? '');
   resetAmountManualFlags();
@@ -351,7 +365,7 @@ function openEditModal(id) {
 }
 
 function onClientSelect(name) {
-  const clientFields = ['phone', 'bank', 'account_number', 'account_holder', 'manager'];
+  const clientFields = ['phone', 'manager'];
   const client = clientsCache.find(c => normalizeName(c.name) === normalizeName(name));
   clientFields.forEach(f => {
     document.getElementById('f-' + f).value = client ? (client[f] || '') : '';
@@ -363,16 +377,37 @@ function onVenueSelect(name) {
   if (vendorEl && !vendorEl.value) vendorEl.value = name;
 }
 
+function onCalendarClientSelect(name) {
+  const client = clientsCache.find(c => normalizeName(c.name) === normalizeName(name));
+  const phoneEl = document.getElementById('modal-phone');
+  const managerEl = document.getElementById('modal-manager');
+
+  if (!client) {
+    if (!name || phoneEl.value === calendarAutoClientInfo.phone) phoneEl.value = '';
+    if (!name || managerEl.value === calendarAutoClientInfo.manager) managerEl.value = '';
+    calendarAutoClientInfo = { phone: '', manager: '' };
+    return;
+  }
+
+  const next = {
+    phone: client.phone || '',
+    manager: client.manager || '',
+  };
+  if (!phoneEl.value || phoneEl.value === calendarAutoClientInfo.phone) phoneEl.value = next.phone;
+  if (!managerEl.value || managerEl.value === calendarAutoClientInfo.manager) managerEl.value = next.manager;
+  calendarAutoClientInfo = next;
+}
+
 function closeModal() { document.getElementById('modal').classList.remove('open'); }
 function closeModalOutside(e) { if (e.target.id === 'modal') closeModal(); }
 
-async function upsertClient(name) {
+async function upsertClient(name, extra = {}) {
   const existing = clientsCache.find(c => normalizeName(c.name) === normalizeName(name));
   if (existing) return existing.id;
   const res = await fetch('/api/clients/', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name }),
+    body: JSON.stringify({ name, ...extra }),
   });
   const created = await parseJsonResponse(res);
   return created.id;
@@ -401,9 +436,9 @@ async function saveReservation() {
   }
 
   const newItems = [];
-  if (groupName && !clientsCache.find(c => c.name === groupName))
-    newItems.push(`고객 "  ${groupName}"`);
-  if (eventName && !venuesCache.find(v => v.name === eventName))
+  if (groupName && !clientsCache.find(c => normalizeName(c.name) === normalizeName(groupName)))
+    newItems.push(`고객 "${groupName}"`);
+  if (eventName && !venuesCache.find(v => normalizeName(v.name) === normalizeName(eventName)))
     newItems.push(`행사장 "${eventName}"`);
 
   if (newItems.length > 0) {
@@ -444,6 +479,9 @@ async function saveReservation() {
     memo:           document.getElementById('f-memo').value,
     client_id:      clientId,
     venue_id:       venueId,
+    calendar_event_id: document.getElementById('f-calendar_event_id').value
+      ? parseInt(document.getElementById('f-calendar_event_id').value, 10)
+      : null,
   };
 
   const url = id ? `/api/reservations/${id}` : '/api/reservations/';
@@ -518,7 +556,6 @@ function renderMonthlyChart(data, year) {
 
   ctx.clearRect(0, 0, W, H);
 
-  // 1단계: 막대 전부 그리기
   sales.forEach((v, i) => {
     const bx = PAD_H + i * barSlot + barSlot * 0.1;
     const bw = barSlot * 0.8;
@@ -528,14 +565,12 @@ function renderMonthlyChart(data, year) {
     ctx.fillStyle = v > 0 ? '#3b82f6' : '#e2e8f0';
     ctx.fillRect(bx, by, bw, Math.max(bh, 2));
 
-    // 월 레이블 (하단)
     ctx.fillStyle = '#64748b';
     ctx.font = '10px sans-serif';
     ctx.textAlign = 'center';
     ctx.fillText(`${i + 1}월`, bx + bw / 2, H - 6);
   });
 
-  // 2단계: 값 레이블 — 항상 막대 위쪽, 흰 배경 패드 위에 짙은 글씨
   ctx.font = 'bold 9px sans-serif';
   sales.forEach((v, i) => {
     if (!v) return;
@@ -545,18 +580,15 @@ function renderMonthlyChart(data, year) {
     const by = PAD_T + chartH - bh;
     const label = (v / 10000).toFixed(0) + '만';
     const cx = bx + bw / 2;
-    const ty = by - 4;                          // 텍스트 베이스라인
+    const ty = by - 4;
     const tw = ctx.measureText(label).width;
-    // 텍스트 뒤 흰 배경 (패딩 2px)
     ctx.fillStyle = 'rgba(255,255,255,0.88)';
     ctx.fillRect(cx - tw / 2 - 2, ty - 9, tw + 4, 12);
-    // 텍스트
     ctx.fillStyle = '#1e3a5f';
     ctx.textAlign = 'center';
     ctx.fillText(label, cx, ty);
   });
 
-  // 3단계: 연도 — 맨 마지막, 우상단 (막대에 안 가려짐)
   ctx.font = 'bold 11px sans-serif';
   ctx.textAlign = 'right';
   ctx.fillStyle = '#94a3b8';
@@ -733,17 +765,16 @@ function renderClientsTable() {
           <td>${c.type ? `<span class="type-badge">${displayText(c.type)}</span>` : '-'}</td>
           <td>${displayText(c.phone)}</td>
           <td>${displayText(c.manager)}</td>
-          <td>${c.bank ? `${displayText(c.bank)} ${displayText(c.account_number, '')}` : '-'}</td>
           <td>
             <button class="btn-edit" onclick="openClientModal(${c.id})">수정</button>
             <button class="btn-delete" onclick="deleteClient(${c.id})">삭제</button>
           </td>
         </tr>`).join('')
-    : '<tr><td colspan="6" class="empty">등록된 고객이 없습니다.</td></tr>';
+    : '<tr><td colspan="5" class="empty">등록된 고객이 없습니다.</td></tr>';
   renderPager('clients-pager', clientsPage, total, 'gotoClientPage');
 }
 
-const CLIENT_FIELDS = ['name','type','phone','bank','account_number','account_holder','manager','memo'];
+const CLIENT_FIELDS = ['name','type','phone','manager','memo'];
 
 function openClientModal(id) {
   document.getElementById('client-edit-id').value = id || '';
@@ -765,6 +796,9 @@ function closeClientModalOutside(e) { if (e.target.id === 'client-modal') closeC
 async function saveClient() {
   const id = document.getElementById('client-edit-id').value;
   const payload = Object.fromEntries(CLIENT_FIELDS.map(f => [f, document.getElementById('cf-' + f).value]));
+  payload.bank = '';
+  payload.account_number = '';
+  payload.account_holder = '';
   payload.name = payload.name.trim();
   if (!payload.name) {
     setFormError('client-error', 'cf-name', '단체명을 입력해 주세요.');
@@ -806,9 +840,330 @@ async function deleteClient(id) {
 }
 
 // ========================
+// Calendar
+// ========================
+let calYear = new Date().getFullYear();
+let calMonth = new Date().getMonth() + 1;
+let calEvents = [];
+let editingEventId = null;
+let calendarAutoClientInfo = { phone: '', manager: '' };
+
+function todayStr() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+}
+
+async function loadCalendar() {
+  calEvents = await fetch(`/api/calendar?year=${calYear}&month=${calMonth}`).then(parseJsonResponse);
+  renderCalendar();
+}
+
+function renderCalendar() {
+  document.getElementById('cal-title').textContent = `${calYear}년 ${calMonth}월`;
+  const firstDay = new Date(calYear, calMonth - 1, 1).getDay();
+  const daysInMonth = new Date(calYear, calMonth, 0).getDate();
+  const today = todayStr();
+
+  let html = '';
+  let dayCount = 1;
+  const totalCells = Math.ceil((firstDay + daysInMonth) / 7) * 7;
+
+  for (let week = 0; week < Math.ceil(totalCells / 7); week++) {
+    html += '<div class="cal-week">';
+    for (let dow = 0; dow < 7; dow++) {
+      const cellIdx = week * 7 + dow;
+      if (cellIdx < firstDay || dayCount > daysInMonth) {
+        html += '<div class="cal-day other-month"><div class="day-num"></div></div>';
+      } else {
+        const dateStr = `${calYear}-${String(calMonth).padStart(2,'0')}-${String(dayCount).padStart(2,'0')}`;
+        const isToday = dateStr === today;
+        const dayEvents = calEvents.filter(e => e.event_date === dateStr);
+        const evCards = dayEvents.map(e => {
+          const title = [e.venue, e.client].filter(Boolean).join(' - ');
+          return `<div class="event-card ${e.is_confirmed ? 'confirmed' : 'unconfirmed'}" onclick="event.stopPropagation();openEventModal(${JSON.stringify(e).replace(/"/g, '&quot;')})">${escapeHtml(title)} ${e.headcount||0}명</div>`;
+        }).join('');
+        html += `<div class="cal-day${isToday?' today':''}" onclick="openEventModal(null,'${dateStr}')">
+          <div class="day-num">${dayCount}</div>
+          ${evCards}
+        </div>`;
+        dayCount++;
+      }
+    }
+    html += '</div>';
+  }
+
+  document.getElementById('cal-body').innerHTML = html;
+}
+
+function prevMonth() {
+  calMonth--;
+  if (calMonth < 1) { calMonth = 12; calYear--; }
+  loadCalendar();
+}
+
+function nextMonth() {
+  calMonth++;
+  if (calMonth > 12) { calMonth = 1; calYear++; }
+  loadCalendar();
+}
+
+function openEventModal(evObj, dateStr) {
+  const modal = document.getElementById('event-modal');
+  const deleteBtn = document.getElementById('event-delete-btn');
+
+  if (evObj) {
+    editingEventId = evObj.id;
+    document.getElementById('event-modal-title').textContent = '가예약 일정 수정';
+    document.getElementById('modal-date').value = evObj.event_date;
+    document.getElementById('modal-venue').value = evObj.venue || '';
+    document.getElementById('modal-client').value = evObj.client || '';
+    document.getElementById('modal-headcount').value = evObj.headcount || '';
+    document.getElementById('modal-phone').value = evObj.phone || '';
+    document.getElementById('modal-manager').value = evObj.manager || '';
+    calendarAutoClientInfo = {
+      phone: evObj.phone || '',
+      manager: evObj.manager || '',
+    };
+    document.getElementById('modal-meal').value = evObj.meal || '';
+    document.getElementById('modal-vehicle').value = evObj.vehicle || '';
+    document.getElementById('modal-note').value = evObj.note || '';
+    document.getElementById('modal-confirmed').checked = evObj.is_confirmed || false;
+    deleteBtn.style.display = '';
+  } else {
+    editingEventId = null;
+    document.getElementById('event-modal-title').textContent = '가예약 일정 추가';
+    document.getElementById('modal-date').value = dateStr || todayStr();
+    document.getElementById('modal-venue').value = '';
+    document.getElementById('modal-client').value = '';
+    document.getElementById('modal-headcount').value = '';
+    document.getElementById('modal-phone').value = '';
+    document.getElementById('modal-manager').value = '';
+    calendarAutoClientInfo = { phone: '', manager: '' };
+    document.getElementById('modal-meal').value = '';
+    document.getElementById('modal-vehicle').value = '';
+    document.getElementById('modal-note').value = '';
+    document.getElementById('modal-confirmed').checked = false;
+    deleteBtn.style.display = 'none';
+  }
+  modal.classList.add('open');
+}
+
+function closeEventModal() { document.getElementById('event-modal').classList.remove('open'); }
+function closeEventModalOutside(e) { if (e.target.id === 'event-modal') closeEventModal(); }
+
+async function saveEvent() {
+  const payload = {
+    event_date: document.getElementById('modal-date').value,
+    venue: document.getElementById('modal-venue').value.trim(),
+    client: document.getElementById('modal-client').value.trim(),
+    headcount: parseInt(document.getElementById('modal-headcount').value, 10) || 0,
+    phone: document.getElementById('modal-phone').value,
+    manager: document.getElementById('modal-manager').value,
+    meal: document.getElementById('modal-meal').value,
+    vehicle: document.getElementById('modal-vehicle').value,
+    note: document.getElementById('modal-note').value,
+    is_confirmed: document.getElementById('modal-confirmed').checked,
+  };
+  if (!payload.event_date) {
+    await appAlert('날짜를 입력해 주세요.', '필수 항목', 'warning');
+    return;
+  }
+
+  const newItems = [];
+  if (payload.client && !clientsCache.find(c => normalizeName(c.name) === normalizeName(payload.client))) {
+    newItems.push(`고객 "${payload.client}"`);
+  }
+  if (payload.venue && !venuesCache.find(v => normalizeName(v.name) === normalizeName(payload.venue))) {
+    newItems.push(`행사장 "${payload.venue}"`);
+  }
+
+  let shouldRefreshOptions = false;
+  if (newItems.length > 0) {
+    const ok = await appConfirm(
+      `등록되지 않은 항목입니다:\n${newItems.join('\n')}\n\n고객/행사장 관리에 등록하시겠습니까?\n취소해도 가예약 일정은 저장됩니다.`,
+      { title: '새 항목 등록', okText: '등록하고 저장', cancelText: '일정만 저장' }
+    );
+    if (ok) {
+      try {
+        await Promise.all([
+          payload.client ? upsertClient(payload.client, {
+            phone: payload.phone,
+            manager: payload.manager,
+          }) : Promise.resolve(null),
+          payload.venue ? upsertVenue(payload.venue) : Promise.resolve(null),
+        ]);
+        shouldRefreshOptions = true;
+      } catch (err) {
+        await appAlert(err.message, '새 항목 등록 오류', 'danger');
+        return;
+      }
+    }
+  }
+
+  try {
+    const url = editingEventId ? `/api/calendar/${editingEventId}` : '/api/calendar/';
+    const method = editingEventId ? 'PUT' : 'POST';
+    await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }).then(parseJsonResponse);
+    closeEventModal();
+    await loadCalendar();
+    if (shouldRefreshOptions) await loadOptions();
+  } catch (err) {
+    await appAlert(err.message, '저장 오류', 'danger');
+  }
+}
+
+async function deleteEvent() {
+  if (!editingEventId) return;
+  const ok = await appConfirm('이 일정을 삭제하시겠습니까?', { title: '일정 삭제', type: 'danger', okText: '삭제' });
+  if (!ok) return;
+  try {
+    await fetch(`/api/calendar/${editingEventId}`, { method: 'DELETE' }).then(parseJsonResponse);
+    closeEventModal();
+    loadCalendar();
+  } catch (err) {
+    await appAlert(err.message, '삭제 오류', 'danger');
+  }
+}
+
+// ========================
+// Event Sheet
+// ========================
+let sheetData = [];
+
+async function loadEventSheet() {
+  const date = document.getElementById('sheet-date').value;
+  if (!date) { await appAlert('날짜를 선택해 주세요.', '날짜 필요', 'warning'); return; }
+  sheetData = await fetch(`/api/calendar/confirmed?date=${date}`).then(parseJsonResponse);
+  renderEventSheet(sheetData);
+}
+
+function renderEventSheet(events) {
+  const totalPeople = events.reduce((s, e) => s + (e.headcount || 0), 0);
+  document.getElementById('sheet-summary').textContent = `총 ${events.length}건 / 예상 인원 ${totalPeople}명`;
+
+  if (!events.length) {
+    document.getElementById('sheet-tbody').innerHTML =
+      '<tr><td colspan="11" class="empty">행사표에 포함된 일정이 없습니다.</td></tr>';
+    return;
+  }
+
+  document.getElementById('sheet-tbody').innerHTML = events.map((e, i) => `
+    <tr>
+      <td>${i + 1}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="venue">${escapeHtml(e.venue || '')}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="client">${escapeHtml(e.client || '')}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="headcount">${e.headcount || 0}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="phone">${escapeHtml(e.phone || '')}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="manager">${escapeHtml(e.manager || '')}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="meal">${escapeHtml(e.meal || '')}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="vehicle">${escapeHtml(e.vehicle || '')}</td>
+      <td class="editable-cell" data-id="${e.id}" data-field="note">${escapeHtml(e.note || '')}</td>
+      <td><button class="btn-settlement" onclick="openSettlementFromEvent(${e.id})">정산등록</button></td>
+      <td><button class="btn-unconfirm" onclick="unconfirmEvent(${e.id})">제외</button></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('.editable-cell').forEach(cell => {
+    cell.addEventListener('click', () => {
+      if (cell.querySelector('input')) return;
+      const val = cell.textContent;
+      const input = document.createElement('input');
+      input.value = val;
+      input.style.cssText = 'width:100%;border:none;outline:2px solid #3b82f6;padding:2px 4px;font-size:13px;font-family:inherit;border-radius:3px';
+      cell.textContent = '';
+      cell.appendChild(input);
+      input.focus();
+      input.addEventListener('blur', async () => {
+        const newVal = input.value;
+        const id = cell.dataset.id;
+        const field = cell.dataset.field;
+        const ev = sheetData.find(e => String(e.id) === String(id));
+        if (ev) {
+          const updated = { ...ev, [field]: field === 'headcount' ? (parseInt(newVal, 10) || 0) : newVal };
+          try {
+            await fetch(`/api/calendar/${id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(updated)
+            }).then(parseJsonResponse);
+            ev[field] = updated[field];
+          } catch (_) {}
+        }
+        cell.textContent = newVal;
+      });
+    });
+  });
+}
+
+async function openSettlementFromEvent(id) {
+  const ev = sheetData.find(e => e.id === id);
+  if (!ev) return;
+  const existing = await fetch(`/api/reservations/?calendar_event_id=${id}`).then(parseJsonResponse);
+  if (existing.length) {
+    const ok = await appConfirm(
+      '이미 이 행사표 일정으로 등록된 정산내역이 있습니다.\n기존 정산내역을 수정하시겠습니까?',
+      { title: '중복 정산 확인', okText: '기존 정산 수정', cancelText: '닫기' }
+    );
+    if (!ok) return;
+    switchPage('reservations');
+    allData = existing;
+    activeDate = null;
+    renderAll();
+    openEditModal(existing[0].id);
+    return;
+  }
+  switchPage('reservations');
+  openModal({
+    calendar_event_id: ev.id,
+    event_date: ev.event_date,
+    group_name: ev.client || '',
+    event_name: ev.venue || '',
+    vendor: ev.venue || '',
+    headcount: ev.headcount || 0,
+    phone: ev.phone || '',
+    manager: ev.manager || '',
+    memo: [ev.meal && `식사: ${ev.meal}`, ev.vehicle && `차량: ${ev.vehicle}`, ev.note]
+      .filter(Boolean)
+      .join(' / '),
+  });
+}
+
+async function unconfirmEvent(id) {
+  const ev = sheetData.find(e => e.id === id);
+  if (!ev) return;
+  const settlements = await fetch(`/api/reservations/?calendar_event_id=${id}`).then(parseJsonResponse);
+  if (settlements.length) {
+    const ok = await appConfirm(
+      '이 행사표 일정으로 등록된 정산내역이 있습니다.\n정산내역은 유지하고 행사표에서만 제외할까요?',
+      { title: '정산내역 유지 확인', okText: '행사표만 제외', cancelText: '취소' }
+    );
+    if (!ok) return;
+  }
+  try {
+    await fetch(`/api/calendar/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ ...ev, is_confirmed: false })
+    }).then(parseJsonResponse);
+    loadEventSheet();
+  } catch (err) {
+    await appAlert(err.message, '오류', 'danger');
+  }
+}
+
+async function exportEventSheet() {
+  const date = document.getElementById('sheet-date').value;
+  if (!date) { await appAlert('날짜를 선택해 주세요.', '날짜 필요', 'warning'); return; }
+  window.location.href = `/api/event-sheet/export/excel?date=${date}`;
+}
+
+// ========================
 // Init
 // ========================
-loadYearOptions();
-loadOptions();
-loadVendors();
-loadReservations();
+document.addEventListener('DOMContentLoaded', () => {
+  loadYearOptions();
+  loadOptions();
+  loadVendors();
+  loadCalendar();
+  document.getElementById('sheet-date').value = todayStr();
+});

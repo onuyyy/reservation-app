@@ -1,13 +1,14 @@
-from sqlalchemy import create_engine, Column, Integer, String, Date, Float, Text, ForeignKey
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine, Column, Integer, String, Date, Float, Text, Boolean, ForeignKey
+from sqlalchemy.orm import DeclarativeBase, sessionmaker
 import os
 
 DB_PATH = os.environ.get("DB_PATH", "./yy.db")
 DATABASE_URL = f"sqlite:///{DB_PATH}"
 engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
-Base = declarative_base()
+
+class Base(DeclarativeBase):
+    pass
 
 class Venue(Base):
     __tablename__ = "venues"
@@ -48,6 +49,21 @@ class Reservation(Base):
     memo = Column(Text)
     venue_id = Column(Integer, ForeignKey("venues.id"), nullable=True)
     client_id = Column(Integer, ForeignKey("clients.id"), nullable=True)
+    calendar_event_id = Column(Integer, ForeignKey("calendar_events.id"), nullable=True, index=True)
+
+class CalendarEvent(Base):
+    __tablename__ = "calendar_events"
+    id = Column(Integer, primary_key=True, index=True)
+    event_date = Column(Date, nullable=False, index=True)
+    venue = Column(String(100))
+    client = Column(String(100))
+    headcount = Column(Integer, default=0)
+    note = Column(Text)
+    is_confirmed = Column(Boolean, default=False)
+    phone = Column(String(30))
+    manager = Column(String(30))
+    meal = Column(String(50))
+    vehicle = Column(String(50))
 
 def get_db():
     db = SessionLocal()
@@ -58,3 +74,19 @@ def get_db():
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    ensure_columns()
+
+def ensure_columns():
+    if not DATABASE_URL.startswith("sqlite:///"):
+        return
+    with engine.begin() as conn:
+        rows = conn.exec_driver_sql("PRAGMA table_info(calendar_events)").fetchall()
+        existing = {row[1] for row in rows}
+        if "manager" not in existing:
+            conn.exec_driver_sql("ALTER TABLE calendar_events ADD COLUMN manager VARCHAR(30)")
+
+        rows = conn.exec_driver_sql("PRAGMA table_info(reservations)").fetchall()
+        existing = {row[1] for row in rows}
+        if "calendar_event_id" not in existing:
+            conn.exec_driver_sql("ALTER TABLE reservations ADD COLUMN calendar_event_id INTEGER")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS ix_reservations_calendar_event_id ON reservations(calendar_event_id)")

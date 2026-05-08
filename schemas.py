@@ -21,6 +21,7 @@ class ReservationCreate(BaseModel):
     memo: Optional[str] = ""
     venue_id: Optional[int] = None
     client_id: Optional[int] = None
+    calendar_event_id: Optional[int] = None
 
 class ReservationUpdate(ReservationCreate):
     pass

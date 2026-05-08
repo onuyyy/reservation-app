@@ -10,16 +10,21 @@ from schemas import ReservationCreate, ReservationUpdate, ReservationOut
 router = APIRouter(prefix="/api/reservations", tags=["reservations"])
 
 @router.get("/")
-def get_reservations(year: Optional[int]=None, month: Optional[int]=None, vendor: Optional[str]=None, keyword: Optional[str]=None, db: Session=Depends(get_db)):
+def get_reservations(year: Optional[int]=None, month: Optional[int]=None, vendor: Optional[str]=None, keyword: Optional[str]=None, calendar_event_id: Optional[int]=None, db: Session=Depends(get_db)):
     q = db.query(Reservation)
     if year: q = q.filter(extract("year", Reservation.event_date)==year)
     if month: q = q.filter(extract("month", Reservation.event_date)==month)
     if vendor: q = q.filter(Reservation.vendor==vendor)
     if keyword: q = q.filter(Reservation.group_name.contains(keyword)|Reservation.event_name.contains(keyword)|Reservation.manager.contains(keyword))
+    if calendar_event_id: q = q.filter(Reservation.calendar_event_id==calendar_event_id)
     return q.order_by(Reservation.event_date.desc()).all()
 
 @router.post("/", response_model=ReservationOut)
 def create_reservation(data: ReservationCreate, db: Session=Depends(get_db)):
+    if data.calendar_event_id:
+        existing = db.query(Reservation).filter(Reservation.calendar_event_id == data.calendar_event_id).first()
+        if existing:
+            raise HTTPException(status_code=409, detail="이미 이 행사표 일정으로 등록된 정산내역이 있습니다.")
     r = Reservation(**data.model_dump())
     db.add(r); db.commit(); db.refresh(r)
     return r
@@ -72,10 +77,10 @@ def export_excel(year: Optional[int]=None, month: Optional[int]=None, vendor: Op
     if month: q = q.filter(extract("month",Reservation.event_date)==month)
     if vendor: q = q.filter(Reservation.vendor==vendor)
     rows = q.order_by(Reservation.event_date).all()
-    wb = Workbook(); ws = wb.active; ws.title = "예약내역"
+    wb = Workbook(); ws = wb.active; ws.title = "정산내역"
     hf = PatternFill("solid",start_color="2E4057"); hfont = Font(bold=True,color="FFFFFF",size=10)
     thin = Side(style="thin",color="CCCCCC"); border = Border(left=thin,right=thin,top=thin,bottom=thin)
-    headers = ["행사일","단체명","행사명","업체","판매가","DC후판매가","인원","DC금액","입금액","실판매가","전화번호","은행","계좌번호","예금주","담당자","메모"]
+    headers = ["행사일","단체명","행사명","업체","판매가","DC후판매가","인원","DC금액","입금액","실판매가","전화번호","은행","계좌번호","예금주","담당자","비고"]
     widths = [12,16,16,10,12,12,8,12,12,12,14,10,16,10,10,20]
     for i,(h,w) in enumerate(zip(headers,widths),1):
         c=ws.cell(row=1,column=i,value=h); c.font=hfont; c.fill=hf; c.alignment=Alignment(horizontal="center"); c.border=border
@@ -92,6 +97,6 @@ def export_excel(year: Optional[int]=None, month: Optional[int]=None, vendor: Op
         c.number_format = "#,##0"
     buf=io.BytesIO(); wb.save(buf); buf.seek(0)
     from urllib.parse import quote
-    fn=f"예약내역_{year or 'ALL'}{'_'+str(month)+'월' if month else ''}.xlsx"
+    fn=f"정산내역_{year or 'ALL'}{'_'+str(month)+'월' if month else ''}.xlsx"
     encoded=quote(fn)
     return StreamingResponse(buf,media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",headers={"Content-Disposition":f"attachment; filename*=UTF-8''{encoded}"})
